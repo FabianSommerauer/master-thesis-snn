@@ -6,6 +6,7 @@ from torchvision import datasets, transforms
 import norse.torch as norse
 import norse.torch.functional.stdp as stdp
 import matplotlib.pyplot as plt
+from einops import rearrange
 
 batch_size = 128
 data_path = '/tmp/data/mnist'
@@ -15,6 +16,8 @@ device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
 _ = torch.manual_seed(0)
 
 
+# todo: check whether torch.no_grad() or detach() is needed in classes below
+
 class SpikePopulationGroupEncoder(nn.Module):
     def __init__(self, seq_length, rate=100, dt=0.001):
         super().__init__()
@@ -23,11 +26,8 @@ class SpikePopulationGroupEncoder(nn.Module):
         self.encoder = norse.PoissonEncoder(seq_length, f_max=rate, dt=dt)
 
     def forward(self, input_values: Tensor) -> Tensor:
-        encoded = torch.empty(self.seq_length, *input_values.shape, 2, device=input_values.device,
-                              dtype=input_values.dtype)
-        for ts in range(self.seq_length):
-            neuron_active = torch.stack((input_values, 1 - input_values), dim=-1)
-            encoded[ts] = self.encoder(neuron_active)
+        neuron_active = torch.stack((input_values, 1 - input_values), dim=-1)
+        encoded = self.encoder(neuron_active)
         return encoded
 
 
@@ -42,13 +42,77 @@ class SpikePopulationGroupBatchToTimeEncoder(nn.Module):
         encoded = self.base_encoder(input_values)
 
         # move batch dimension into time dimension (concat with delay); during delay no spikes are emitted
+        # also concat all neurons within timestep into single dimension
         padded = torch.cat((encoded, torch.zeros(self.delay_shift, *encoded.shape[1:], device=encoded.device, dtype=encoded.dtype)),
                     dim=0)
-        combined = padded.view(-1, *padded.shape[2:])  # todo: check if this concatenates appropriately
+        combined = rearrange(padded, 't b ... i n -> (b t) ... (i n)')
+        return combined
 
-        # concat all neurons within timestep into single dimension
-        return combined.view(*combined.shape[:-2], -1)
 
+encoder_test = SpikePopulationGroupBatchToTimeEncoder(1000, 50, 0.001, 0.2)
+input_test = torch.randint(0, 2, (4, 3))  # 4 batches, 3 inputs
+
+# (time, spikes - 0 or 1)
+encoded_test = encoder_test(input_test)
+# encoded_test = torch.flip(encoded_test, dims=[-1])  # flip spikes for more intuitive visualization
+
+# Define a function to create a raster plot for spikes
+def raster_plot(spikes, ax, color='b'):
+    for i, spike_train in enumerate(spikes):
+        ax.eventplot(np.where(spike_train > 0)[0], lineoffsets=i, linelengths=0.7, colors=color)
+
+# Plot inputs
+plt.figure(figsize=(10, 5))
+plt.subplot(2, 1, 1)
+x = np.arange(input_test.shape[0])
+width = 0.2
+
+for i in range(input_test.shape[1]):  # Iterate over inputs
+    plt.bar(x + (i+0.1) * width, input_test[:, i], width, label=f'Input {i + 1}')
+
+plt.title('Input Test')
+plt.xlabel('Batch')
+plt.ylabel('Input Value')
+plt.xticks(x + width * (input_test.shape[0] - 1) / 2, [f'Batch {i + 1}' for i in range(input_test.shape[0])])
+plt.ylim(-0.1, 1.1)
+plt.legend()
+
+# Plot encoded spikes using a raster plot
+plt.subplot(2, 1, 2)
+spikes = [encoded_test[:, i].cpu().numpy() for i in range(encoded_test.shape[1])]
+raster_plot(spikes, plt.gca())
+plt.title('Encoded Spikes Test')
+plt.xlabel('Time Step')
+plt.ylabel('Neuron')
+
+plt.tight_layout()
+plt.show()
+
+
+class BinaryTimedPSP(nn.Module):
+    def __init__(self, sigma=0.1, dt=0.001):
+        super().__init__()
+        self.duration = int(sigma / dt)
+
+    def forward(self, input_spikes: Tensor) -> Tensor:
+        with torch.no_grad():
+            convolvable_spikes = rearrange(input_spikes, 't ... -> ... 1 t')
+            filter = torch.ones(1, 1, self.duration, device=input_spikes.device, dtype=input_spikes.dtype,
+                                requires_grad=False)
+
+            psp_sum = torch.nn.functional.conv1d(convolvable_spikes,
+                                                 filter,
+                                                 padding=self.duration-1)
+
+            psp = torch.clip(psp_sum, 0, 1)[..., :-(self.duration-1)]
+
+            return rearrange(psp, '... 1 t -> t ...')
+
+
+test_input_spikes = torch.tensor(np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2, (1000, 1)))
+plt.plot(test_input_spikes)
+plt.plot(BinaryTimedPSP(0.01)(test_input_spikes).cpu().numpy())
+plt.show()
 
 class BayesianSTDPModule(nn.Module):
     def __init__(self, seq_length, input_neuron_cnt, output_neuron_cnt, output_neuron, stdp_pars: stdp.STDPParameters):
