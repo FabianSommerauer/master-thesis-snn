@@ -115,10 +115,10 @@ plt.plot(BinaryTimedPSP(0.01)(test_input_spikes).cpu().numpy())
 plt.show()
 
 class BayesianSTDPModule(nn.Module):
-    def __init__(self, seq_length, input_neuron_cnt, output_neuron_cnt, output_neuron, stdp_pars: stdp.STDPParameters):
+    def __init__(self, input_neuron_cnt, output_neuron_cnt,
+                 input_encoder, output_neuron, stdp_pars: stdp.STDPParameters):
         super().__init__()
         self.linear = nn.Linear(input_neuron_cnt, output_neuron_cnt, bias=True).requires_grad_(False)
-        self.seq_length = seq_length
         self.output_neuron = output_neuron
 
         # TODO: adjust these based on custom STDP rule
@@ -126,15 +126,18 @@ class BayesianSTDPModule(nn.Module):
         self.t_pre = torch.tensor(1.0)
         self.t_post = torch.tensor(1.0)
 
+        self.input_encoder = input_encoder
+
     def forward(self, input_spikes: Tensor, z_state=None, stdp_state: stdp.STDPState = None, train: bool = True) \
             -> (Tensor, object, stdp.STDPState):
         with torch.no_grad():
-            input_psps = self.encode(input_spikes)  # TODO
+            seq_length = input_spikes.shape[0]
+            input_psps = self.input_encoder(input_spikes)
 
             if stdp_state is None:
                 stdp_state = stdp.STDPState(self.t_pre, self.t_post)
 
-            for ts in range(self.seq_length):
+            for ts in range(seq_length):
                 z_in = self.linear(input_psps)
                 z_out, z_state = self.output_neuron(z_in, z_state)
 
