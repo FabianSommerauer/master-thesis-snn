@@ -28,14 +28,16 @@ class SpikePopulationGroupEncoder(nn.Module):
         self.encoder = norse.PoissonEncoder(seq_length, f_max=rate, dt=dt)
 
     def forward(self, input_values: Tensor) -> Tensor:
+        # assumes input values within [0,1] (ideally binary)
         neuron_active = torch.stack((input_values, 1 - input_values), dim=-1)
         encoded = self.encoder(neuron_active)
         return encoded
 
 
 class SpikePopulationGroupBatchToTimeEncoder(nn.Module):
-    def __init__(self, seq_length, rate=100, dt=0.001, delay=0.1):
+    def __init__(self, presentation_duration=0.1, rate=100,delay=0.01, dt=0.001):
         super().__init__()
+        seq_length = int(presentation_duration / dt)
         self.base_encoder = SpikePopulationGroupEncoder(seq_length, rate, dt)
         self.delay_shift = int(delay / dt)
 
@@ -166,16 +168,16 @@ class StochasticOutputNeuronCell(nn.Module):
         return out_spikes, inhibition
 
 
-class BayesianSTDPModule(nn.Module):
+class BayesianSTDPModel(nn.Module):
     def __init__(self, input_neuron_cnt, output_neuron_cnt,
-                 input_encoder, output_neuron_cell,
+                 input_psp, output_neuron_cell,
                  stdp_c=1, stdp_mu=0.1,
                  acc_states=False):
         super().__init__()
         self.linear = nn.Linear(input_neuron_cnt, output_neuron_cnt, bias=True).requires_grad_(False)
         self.output_neuron_cell = output_neuron_cell
 
-        self.input_encoder = input_encoder
+        self.input_psp = input_psp
         self.acc_states = acc_states
 
         self.stdp_c = stdp_c
@@ -185,7 +187,7 @@ class BayesianSTDPModule(nn.Module):
             -> (Tensor, Tensor):
         with torch.no_grad():
             seq_length = input_spikes.shape[0]
-            input_psps = self.input_encoder(input_spikes)
+            input_psps = self.input_psp(input_spikes)
 
             z_out_acc = []
             if self.acc_states:
@@ -249,3 +251,27 @@ mnist_test = datasets.MNIST(data_path, train=False, download=True, transform=tra
 
 train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=True)
 test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=True)
+
+
+binary_input_variable_cnt = 5
+input_neurons = binary_input_variable_cnt * 2
+output_neurons = 3
+
+dt = 0.001
+sigma = 0.01
+
+presentation_duration = 0.1
+delay = 0.02
+input_encoding_rate = 500
+
+encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration, input_encoding_rate, delay, dt)
+
+model = BayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, dt), StochasticOutputNeuronCell(dt=dt),
+                          stdp_c=1, stdp_mu=0.1, acc_states=True)
+
+# todo
+data = torch.randint(0, 2, (output_neurons, binary_input_variable_cnt))   # 3 batches of 5 bit patterns
+input_spikes = encoder(data)
+output_spikes, output_states = model(input_spikes, train=True)
+
+# todo: plot everything
