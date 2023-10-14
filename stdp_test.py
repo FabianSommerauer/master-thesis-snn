@@ -1,12 +1,14 @@
 import numpy as np
 from torch import Tensor
 import torch, torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 import norse.torch as norse
 import norse.torch.functional.stdp as stdp
 import matplotlib.pyplot as plt
 from einops import rearrange
+import custom_stdp
 
 batch_size = 128
 data_path = '/tmp/data/mnist'
@@ -43,8 +45,9 @@ class SpikePopulationGroupBatchToTimeEncoder(nn.Module):
 
         # move batch dimension into time dimension (concat with delay); during delay no spikes are emitted
         # also concat all neurons within timestep into single dimension
-        padded = torch.cat((encoded, torch.zeros(self.delay_shift, *encoded.shape[1:], device=encoded.device, dtype=encoded.dtype)),
-                    dim=0)
+        padded = torch.cat(
+            (encoded, torch.zeros(self.delay_shift, *encoded.shape[1:], device=encoded.device, dtype=encoded.dtype)),
+            dim=0)
         combined = rearrange(padded, 't b ... i n -> (b t) ... (i n)')
         return combined
 
@@ -54,12 +57,15 @@ input_test = torch.randint(0, 2, (4, 3))  # 4 batches, 3 inputs
 
 # (time, spikes - 0 or 1)
 encoded_test = encoder_test(input_test)
+
+
 # encoded_test = torch.flip(encoded_test, dims=[-1])  # flip spikes for more intuitive visualization
 
 # Define a function to create a raster plot for spikes
 def raster_plot(spikes, ax, color='b'):
     for i, spike_train in enumerate(spikes):
         ax.eventplot(np.where(spike_train > 0)[0], lineoffsets=i, linelengths=0.7, colors=color)
+
 
 # Plot inputs
 plt.figure(figsize=(10, 5))
@@ -68,7 +74,7 @@ x = np.arange(input_test.shape[0])
 width = 0.2
 
 for i in range(input_test.shape[1]):  # Iterate over inputs
-    plt.bar(x + (i+0.1) * width, input_test[:, i], width, label=f'Input {i + 1}')
+    plt.bar(x + (i + 0.1) * width, input_test[:, i], width, label=f'Input {i + 1}')
 
 plt.title('Input Test')
 plt.xlabel('Batch')
@@ -102,52 +108,108 @@ class BinaryTimedPSP(nn.Module):
 
             psp_sum = torch.nn.functional.conv1d(convolvable_spikes,
                                                  filter,
-                                                 padding=self.duration-1)
+                                                 padding=self.duration - 1)
 
-            psp = torch.clip(psp_sum, 0, 1)[..., :-(self.duration-1)]
+            psp = torch.clip(psp_sum, 0, 1)[..., :-(self.duration - 1)]
 
             return rearrange(psp, '... 1 t -> t ...')
 
 
-test_input_spikes = torch.tensor(np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2, (1000, 1)))
+test_input_spikes = torch.tensor(
+    np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2, (
+    1000, 1)) * np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2,
+                                                                                                            (1000, 1)))
 plt.plot(test_input_spikes)
 plt.plot(BinaryTimedPSP(0.01)(test_input_spikes).cpu().numpy())
 plt.show()
 
+
+class StochasticOutputNeuronCell(nn.Module):
+    def __init__(self, inhibition_increase=1.0, decay_rate=0.5, decay_sigma=0.3, dt=0.001):
+        super(StochasticOutputNeuronCell, self).__init__()
+
+        self.inhibition_increase = inhibition_increase
+        self.decay_rate = decay_rate
+        self.decay_sigma = decay_sigma
+        self.dt = dt
+        self.dt_sqrt = np.sqrt(dt)
+
+    def forward(self, inputs, inhibition=None):
+        if inhibition is None:
+            inhibition = torch.zeros(*inputs.shape[:-1], 1, dtype=inputs.dtype, device=inputs.device)
+        else:
+            # Euler approximation of Ornstein-Uhlenbeck process
+            inhibition = (1 - self.decay_rate * self.dt) * inhibition \
+                         + self.decay_sigma * self.dt_sqrt * torch.normal(0, 1, inhibition.shape)
+
+            # todo: maybe use more direct solution from
+            # https://github.com/cantaro86/Financial-Models-Numerical-Methods/blob/master/6.1%20Ornstein-Uhlenbeck%20process%20and%20applications.ipynb
+
+        rates = torch.exp(inputs - inhibition)
+
+        rand_vals = torch.rand(
+            *inputs.shape,
+            device=inputs.device,
+        )
+        min_vals, min_indices = torch.min(rand_vals, -1)
+
+        # prefer spikes from neurons with lowest random value
+        out_spike_locations = F.one_hot(min_indices, num_classes=inputs.shape[-1])
+        spike_occurred = rand_vals < self.dt * rates
+
+        # ensures that only one output neuron can fire at a time
+        out_spikes = (out_spike_locations * spike_occurred).to(dtype=inputs.dtype)
+
+        # increase inhibition if a spike occured
+        inhibition += torch.max(out_spikes, -1, keepdim=True).values * self.inhibition_increase
+
+        return out_spikes, inhibition
+
+
 class BayesianSTDPModule(nn.Module):
     def __init__(self, input_neuron_cnt, output_neuron_cnt,
-                 input_encoder, output_neuron, stdp_pars: stdp.STDPParameters):
+                 input_encoder, output_neuron_cell,
+                 stdp_c=1, stdp_mu=0.1,
+                 acc_states=False):
         super().__init__()
         self.linear = nn.Linear(input_neuron_cnt, output_neuron_cnt, bias=True).requires_grad_(False)
-        self.output_neuron = output_neuron
-
-        # TODO: adjust these based on custom STDP rule
-        self.stdp_pars = stdp_pars
-        self.t_pre = torch.tensor(1.0)
-        self.t_post = torch.tensor(1.0)
+        self.output_neuron_cell = output_neuron_cell
 
         self.input_encoder = input_encoder
+        self.acc_states = acc_states
 
-    def forward(self, input_spikes: Tensor, z_state=None, stdp_state: stdp.STDPState = None, train: bool = True) \
-            -> (Tensor, object, stdp.STDPState):
+        self.stdp_c = stdp_c
+        self.stdp_mu = stdp_mu
+
+    def forward(self, input_spikes: Tensor, z_state=None, train: bool = True) \
+            -> (Tensor, Tensor):
         with torch.no_grad():
             seq_length = input_spikes.shape[0]
             input_psps = self.input_encoder(input_spikes)
 
-            if stdp_state is None:
-                stdp_state = stdp.STDPState(self.t_pre, self.t_post)
+            z_out_acc = []
+            if self.acc_states:
+                state_acc = []
 
             for ts in range(seq_length):
-                z_in = self.linear(input_psps)
-                z_out, z_state = self.output_neuron(z_in, z_state)
+                input_psp = input_psps[ts]
+                z_in = self.linear(input_psp)
+                z_out, z_state = self.output_neuron_cell(z_in, z_state)
+
+                z_out_acc.append(z_out)
+                if self.acc_states:
+                    state_acc.append(z_state)
 
                 if train:
-                    new_weights, stdp_state = stdp.stdp_step_linear(input_spikes, z_out,
-                                                                    self.linear.get_parameter("weight"),
-                                                                    stdp_state, self.stdp_pars,
-                                                                    self.dt)
+                    new_weights, new_biases = custom_stdp.apply_bayesian_stdp(input_psp, z_out,
+                                                                              self.linear.weight.data,
+                                                                              self.linear.bias.data,
+                                                                              self.stdp_c,
+                                                                              self.stdp_mu)
+                    self.linear.weight.data = new_weights
+                    self.linear.bias.data = new_biases
 
-            return z_out, z_state, stdp_state
+            return torch.stack(z_out_acc), torch.stack(state_acc) if self.acc_states else z_state
 
 
 class ToBinaryTransform(object):
