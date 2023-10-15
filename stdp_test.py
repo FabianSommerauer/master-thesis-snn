@@ -150,8 +150,12 @@ class OUInhibitionProcess(object):
         self.noise_decay_factor = np.exp(- dt / noise_tau)
         self.total_noise_sigma = noise_sigma * np.sqrt((1. - self.noise_decay_factor ** 2) / 2. * noise_tau)
 
-    def step(self, spike_occurrences, state):
-        inhibition, noise = state
+    def step(self, spike_occurrences, state=None):
+        if state is None:
+            inhibition = torch.zeros_like(spike_occurrences) * self.inhibition_rest
+            noise = torch.ones_like(spike_occurrences) * self.noise_rest
+        else:
+            inhibition, noise = state
 
         inhibition = (self.inhibition_rest + (inhibition - self.inhibition_rest) * self.inhibition_decay_factor
                       + spike_occurrences * self.inhibition_increase)
@@ -165,31 +169,27 @@ class OUInhibitionProcess(object):
         noise = (self.noise_rest + (noise - self.noise_rest) * self.noise_decay_factor
                  + self.total_noise_sigma * torch.normal(0, 1, noise.shape))
 
-        return inhibition - noise, (inhibition, noise)
+        return inhibition, noise
 
+
+def efficient_multinomial(r):
+    return (r.cumsum(-1) >= torch.rand(r.shape[:-1])[..., None]).byte().argmax(-1)
 
 class StochasticOutputNeuronCell(nn.Module):
-    def __init__(self, inhibition_increase=5.0, decay_rate=100.0, decay_sigma=5, dt=0.001):
+    def __init__(self, inhibition_process: OUInhibitionProcess, dt=0.001):
         super(StochasticOutputNeuronCell, self).__init__()
 
-        self.inhibition_increase = inhibition_increase
-        self.decay_rate = decay_rate
-        self.decay_sigma = decay_sigma
+        self.inhibition_process = inhibition_process
         self.dt = dt
-        self.dt_sqrt = np.sqrt(dt)
 
-    def forward(self, inputs, inhibition=None):
-        if inhibition is None:
-            inhibition = torch.zeros(*inputs.shape[:-1], 1, dtype=inputs.dtype, device=inputs.device)
-        else:
-            # Euler approximation of Ornstein-Uhlenbeck process
-            inhibition = (1 - self.decay_rate * self.dt) * inhibition \
-                         + self.decay_sigma * self.dt_sqrt * torch.normal(0, 1, inhibition.shape)
+    def forward(self, inputs, inhibition_state=None):
+        if inhibition_state is None:
+            no_spike_occurrences = torch.zeros(*inputs.shape[:-1], 1, dtype=inputs.dtype, device=inputs.device)
+            inhibition_state = self.inhibition_process.step(no_spike_occurrences)
 
-            # todo: maybe use more direct solution from
-            # https://github.com/cantaro86/Financial-Models-Numerical-Methods/blob/master/6.1%20Ornstein-Uhlenbeck%20process%20and%20applications.ipynb
+        inhibition, noise = inhibition_state
 
-        rates = torch.clip(torch.exp(inputs - inhibition), 1e-20, 1e20)  # todo: check if clip range ok
+        rates = torch.clip(torch.exp(inputs - inhibition + noise), 1e-20, 1e20)  # todo: check if clip range ok -> maybe we should throw for these extreme values instead
 
         total_rate = torch.sum(rates, -1, keepdim=True)
 
@@ -200,7 +200,8 @@ class StochasticOutputNeuronCell(nn.Module):
 
         spike_occurred = rand_val < self.dt * total_rate
 
-        spike_location = torch.distributions.Categorical(rates).sample()
+        rel_probs = rates / total_rate
+        spike_location = efficient_multinomial(rel_probs)
 
         out_spike_locations = F.one_hot(spike_location, num_classes=rates.shape[-1])
 
@@ -208,9 +209,10 @@ class StochasticOutputNeuronCell(nn.Module):
         out_spikes = (out_spike_locations * spike_occurred).to(dtype=inputs.dtype)
 
         # increase inhibition if a spike occured
-        inhibition += torch.max(out_spikes, -1, keepdim=True).values * self.inhibition_increase
+        spike_occurrences = torch.max(out_spikes, -1, keepdim=True).values
+        inhibition_state = self.inhibition_process.step(spike_occurrences, inhibition_state)
 
-        return out_spikes, inhibition
+        return out_spikes, inhibition_state
 
 
 class BayesianSTDPModel(nn.Module):
@@ -255,7 +257,7 @@ class BayesianSTDPModel(nn.Module):
                     self.linear.weight.data = new_weights
                     self.linear.bias.data = new_biases
 
-            return torch.stack(z_out_acc), torch.stack(state_acc) if self.acc_states else z_state
+            return torch.stack(z_out_acc), state_acc if self.acc_states else z_state
 
 
 class ToBinaryTransform(object):
@@ -317,15 +319,18 @@ encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration,
 stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1, base_mu=1)
 # stdp_module = custom_stdp.BayesianSTDPAdaptive(input_neurons, output_neurons, c=1, base_mu=1)
 
+inhibition_process = OUInhibitionProcess(inhibition_increase=3000, inhibition_rest=0, inhibition_tau=0.005,
+                                         noise_rest=0, noise_tau=0.005, noise_sigma=50, dt=dt)
+output_cell = StochasticOutputNeuronCell(
+                              inhibition_process=inhibition_process, dt=dt)
+
 model = BayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, dt),
-                          StochasticOutputNeuronCell(
-                              inhibition_increase=2500, decay_rate=200, decay_sigma=2500,
-                              dt=dt),
+                          output_neuron_cell=output_cell,
                           stdp_module=stdp_module, acc_states=True)
 
 # todo
 data = torch.randint(0, 2, (output_neurons, binary_input_variable_cnt))  # 3 batches of 5 bit patterns
-train_data = data.repeat(2000, 3)
+train_data = data.repeat(2000, 3)  # data.repeat(2000, 3)
 test_data = data.repeat(3, 3)
 input_spikes = encoder(train_data)
 _, _ = model(input_spikes, train=True)
@@ -337,8 +342,16 @@ print(input_spikes)
 print(output_spikes)
 print(output_states)
 
-# todo: plot everything
-plt.plot(output_states)
+inhibition = [state[0] - state[1] for state in output_states]
+plt.plot(inhibition)
+plt.show()
+
+inhibition = [state[0] for state in output_states]
+noise = [state[1] for state in output_states]
+plt.plot(inhibition)
+plt.show()
+
+plt.plot(noise)
 plt.show()
 
 # Plot inputs
