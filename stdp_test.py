@@ -15,7 +15,10 @@ data_path = '/tmp/data/mnist'
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
+import random
+random.seed(0)
 _ = torch.manual_seed(0)
+np.random.seed(0)
 
 
 # todo: check whether torch.no_grad() or detach() is needed in classes below
@@ -36,10 +39,10 @@ class SpikePopulationGroupEncoder(nn.Module):
 
 
 class SpikePopulationGroupBatchToTimeEncoder(nn.Module):
-    def __init__(self, presentation_duration=0.1, rate=100, delay=0.01, dt=0.001):
+    def __init__(self, presentation_duration=0.1, active_rate=100, inactive_rate=0.0, delay=0.01, dt=0.001):
         super().__init__()
         seq_length = int(presentation_duration / dt)
-        self.base_encoder = SpikePopulationGroupEncoder(seq_length, rate, dt)
+        self.base_encoder = SpikePopulationGroupEncoder(seq_length, active_rate, inactive_rate, dt)
         self.delay_shift = int(delay / dt)
 
     def forward(self, input_values: Tensor) -> Tensor:
@@ -186,18 +189,20 @@ class StochasticOutputNeuronCell(nn.Module):
             # todo: maybe use more direct solution from
             # https://github.com/cantaro86/Financial-Models-Numerical-Methods/blob/master/6.1%20Ornstein-Uhlenbeck%20process%20and%20applications.ipynb
 
-        rates = torch.exp(inputs - inhibition)
+        rates = torch.clip(torch.exp(inputs - inhibition), 1e-20, 1e20)  # todo: check if clip range ok
 
-        rand_vals = torch.rand(
-            *inputs.shape,
-            device=inputs.device,
+        total_rate = torch.sum(rates, -1, keepdim=True)
+
+        rand_val = torch.rand(
+            *total_rate.shape,
+            device=total_rate.device,
         )
-        firing_tendency = rand_vals / rates
-        min_tendency, min_indices = torch.min(firing_tendency, -1)
 
-        # prefer spikes from neurons with lowest random value
-        out_spike_locations = F.one_hot(min_indices, num_classes=inputs.shape[-1])
-        spike_occurred = firing_tendency < self.dt
+        spike_occurred = rand_val < self.dt * total_rate
+
+        spike_location = torch.distributions.Categorical(rates).sample()
+
+        out_spike_locations = F.one_hot(spike_location, num_classes=rates.shape[-1])
 
         # ensures that only one output neuron can fire at a time
         out_spikes = (out_spike_locations * spike_occurred).to(dtype=inputs.dtype)
@@ -303,8 +308,11 @@ rate_multiplier = 1
 presentation_duration = 0.04
 delay = 0.01
 input_encoding_rate = 100
+input_encoding_inactive_rate = 10
 
-encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration, input_encoding_rate, delay, dt)
+encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration,
+                                                 input_encoding_rate, input_encoding_inactive_rate,
+                                                 delay, dt)
 
 stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1, base_mu=1)
 # stdp_module = custom_stdp.BayesianSTDPAdaptive(input_neurons, output_neurons, c=1, base_mu=1)
@@ -312,11 +320,11 @@ stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1, base_mu=1)
 model = BayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, dt),
                           StochasticOutputNeuronCell(
                               inhibition_increase=2500, decay_rate=200, decay_sigma=2500,
-                              rate_multiplier=rate_multiplier, dt=dt),
+                              dt=dt),
                           stdp_module=stdp_module, acc_states=True)
 
 # todo
-data = torch.randint(0, 2, (output_neurons, binary_input_variable_cnt)) * 0.9  # 3 batches of 5 bit patterns
+data = torch.randint(0, 2, (output_neurons, binary_input_variable_cnt))  # 3 batches of 5 bit patterns
 train_data = data.repeat(2000, 3)
 test_data = data.repeat(3, 3)
 input_spikes = encoder(train_data)
