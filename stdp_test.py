@@ -1,13 +1,13 @@
-import numpy as np
-from torch import Tensor
-import torch, torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import DataLoader
-from torchvision import datasets, transforms
-import norse.torch as norse
-import norse.torch.functional.stdp as stdp
 import matplotlib.pyplot as plt
+import norse.torch as norse
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 from einops import rearrange
+from torch import Tensor
+from torchvision import transforms
+
 import custom_stdp
 
 batch_size = 128
@@ -21,21 +21,22 @@ _ = torch.manual_seed(0)
 # todo: check whether torch.no_grad() or detach() is needed in classes below
 
 class SpikePopulationGroupEncoder(nn.Module):
-    def __init__(self, seq_length, rate=100, dt=0.001):
+    def __init__(self, seq_length, active_rate=100.0, inactive_rate=0.0, dt=0.001):
         super().__init__()
 
         self.seq_length = seq_length
-        self.encoder = norse.PoissonEncoder(seq_length, f_max=rate, dt=dt)
+        self.encoder = norse.PoissonEncoder(seq_length, f_max=active_rate, dt=dt)
+        self.inactive_factor = inactive_rate / active_rate
 
     def forward(self, input_values: Tensor) -> Tensor:
         # assumes input values within [0,1] (ideally binary)
-        neuron_active = torch.stack((input_values, 1 - input_values), dim=-1)
+        neuron_active = torch.stack((input_values, (1 - input_values) * self.inactive_factor), dim=-1)
         encoded = self.encoder(neuron_active)
         return encoded
 
 
 class SpikePopulationGroupBatchToTimeEncoder(nn.Module):
-    def __init__(self, presentation_duration=0.1, rate=100,delay=0.01, dt=0.001):
+    def __init__(self, presentation_duration=0.1, rate=100, delay=0.01, dt=0.001):
         super().__init__()
         seq_length = int(presentation_duration / dt)
         self.base_encoder = SpikePopulationGroupEncoder(seq_length, rate, dt)
@@ -119,15 +120,53 @@ class BinaryTimedPSP(nn.Module):
 
 test_input_spikes = torch.tensor(
     np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2, (
-    1000, 1)) * np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2,
-                                                                                                            (1000, 1)))
+        1000, 1)) * np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2,
+                                                                                                                (1000,
+                                                                                                                 1)))
 plt.plot(test_input_spikes)
 plt.plot(BinaryTimedPSP(0.01)(test_input_spikes).cpu().numpy())
 plt.show()
 
 
+class OUInhibitionProcess(object):
+    def __init__(self, inhibition_increase=3000, inhibition_rest=500, inhibition_tau=0.005,
+                 noise_rest=1000, noise_tau=0.005, noise_sigma=50, dt=0.001):
+        super(OUInhibitionProcess, self).__init__()
+
+        self.inhibition_increase = inhibition_increase
+        self.inhibition_rest = inhibition_rest
+        # self.inhibition_tau = inhibition_tau
+        self.noise_rest = noise_rest
+        # self.noise_tau = noise_tau
+        # self.noise_sigma = noise_sigma
+
+        self.dt = dt
+        # self.dt_sqrt = np.sqrt(dt)
+
+        self.inhibition_decay_factor = np.exp(- dt / inhibition_tau)
+        self.noise_decay_factor = np.exp(- dt / noise_tau)
+        self.total_noise_sigma = noise_sigma * np.sqrt((1. - self.noise_decay_factor ** 2) / 2. * noise_tau)
+
+    def step(self, spike_occurrences, state):
+        inhibition, noise = state
+
+        inhibition = (self.inhibition_rest + (inhibition - self.inhibition_rest) * self.inhibition_decay_factor
+                      + spike_occurrences * self.inhibition_increase)
+
+        # Euler approximation of Ornstein-Uhlenbeck process
+        # noise = (1 - self.decay_rate * self.dt) * noise \
+        #             + self.decay_sigma * self.dt_sqrt * torch.normal(0, 1, noise.shape)
+
+        # more direct approximation based on
+        # https://github.com/cantaro86/Financial-Models-Numerical-Methods/blob/master/6.1%20Ornstein-Uhlenbeck%20process%20and%20applications.ipynb
+        noise = (self.noise_rest + (noise - self.noise_rest) * self.noise_decay_factor
+                 + self.total_noise_sigma * torch.normal(0, 1, noise.shape))
+
+        return inhibition - noise, (inhibition, noise)
+
+
 class StochasticOutputNeuronCell(nn.Module):
-    def __init__(self, inhibition_increase=1.0, decay_rate=0.5, decay_sigma=0.3, dt=0.001):
+    def __init__(self, inhibition_increase=5.0, decay_rate=100.0, decay_sigma=5, dt=0.001):
         super(StochasticOutputNeuronCell, self).__init__()
 
         self.inhibition_increase = inhibition_increase
@@ -153,11 +192,12 @@ class StochasticOutputNeuronCell(nn.Module):
             *inputs.shape,
             device=inputs.device,
         )
-        min_vals, min_indices = torch.min(rand_vals, -1)
+        firing_tendency = rand_vals / rates
+        min_tendency, min_indices = torch.min(firing_tendency, -1)
 
         # prefer spikes from neurons with lowest random value
         out_spike_locations = F.one_hot(min_indices, num_classes=inputs.shape[-1])
-        spike_occurred = rand_vals < self.dt * rates
+        spike_occurred = firing_tendency < self.dt
 
         # ensures that only one output neuron can fire at a time
         out_spikes = (out_spike_locations * spike_occurred).to(dtype=inputs.dtype)
@@ -171,7 +211,7 @@ class StochasticOutputNeuronCell(nn.Module):
 class BayesianSTDPModel(nn.Module):
     def __init__(self, input_neuron_cnt, output_neuron_cnt,
                  input_psp, output_neuron_cell,
-                 stdp_c=1, stdp_mu=0.1,
+                 stdp_module,
                  acc_states=False):
         super().__init__()
         self.linear = nn.Linear(input_neuron_cnt, output_neuron_cnt, bias=True).requires_grad_(False)
@@ -180,12 +220,13 @@ class BayesianSTDPModel(nn.Module):
         self.input_psp = input_psp
         self.acc_states = acc_states
 
-        self.stdp_c = stdp_c
-        self.stdp_mu = stdp_mu
+        self.stdp_module = stdp_module
 
-    def forward(self, input_spikes: Tensor, z_state=None, train: bool = True) \
+    def forward(self, input_spikes: Tensor, state=None, train: bool = True) \
             -> (Tensor, Tensor):
         with torch.no_grad():
+            z_state = state
+
             seq_length = input_spikes.shape[0]
             input_psps = self.input_psp(input_spikes)
 
@@ -203,11 +244,9 @@ class BayesianSTDPModel(nn.Module):
                     state_acc.append(z_state)
 
                 if train:
-                    new_weights, new_biases = custom_stdp.apply_bayesian_stdp(input_psp, z_out,
-                                                                              self.linear.weight.data,
-                                                                              self.linear.bias.data,
-                                                                              self.stdp_c,
-                                                                              self.stdp_mu)
+                    new_weights, new_biases = self.stdp_module(input_psp, z_out,
+                                                               self.linear.weight.data,
+                                                               self.linear.bias.data)
                     self.linear.weight.data = new_weights
                     self.linear.bias.data = new_biases
 
@@ -246,32 +285,74 @@ transform = transforms.Compose([
     # ToBinaryTransform(0.5)
 ])
 
-mnist_train = datasets.MNIST(data_path, train=True, download=True, transform=transform)
-mnist_test = datasets.MNIST(data_path, train=False, download=True, transform=transform)
+# mnist_train = datasets.MNIST(data_path, train=True, download=True, transform=transform)
+# mnist_test = datasets.MNIST(data_path, train=False, download=True, transform=transform)
 
-train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=True)
-test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=True)
+# train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=True)
+# test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=True)
 
 
-binary_input_variable_cnt = 5
-input_neurons = binary_input_variable_cnt * 2
+binary_input_variable_cnt = 4
+input_neurons = binary_input_variable_cnt * 6
 output_neurons = 3
 
 dt = 0.001
 sigma = 0.01
+rate_multiplier = 1
 
-presentation_duration = 0.1
-delay = 0.02
-input_encoding_rate = 500
+presentation_duration = 0.04
+delay = 0.01
+input_encoding_rate = 100
 
 encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration, input_encoding_rate, delay, dt)
 
-model = BayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, dt), StochasticOutputNeuronCell(dt=dt),
-                          stdp_c=1, stdp_mu=0.1, acc_states=True)
+stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1, base_mu=1)
+# stdp_module = custom_stdp.BayesianSTDPAdaptive(input_neurons, output_neurons, c=1, base_mu=1)
+
+model = BayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, dt),
+                          StochasticOutputNeuronCell(
+                              inhibition_increase=2500, decay_rate=200, decay_sigma=2500,
+                              rate_multiplier=rate_multiplier, dt=dt),
+                          stdp_module=stdp_module, acc_states=True)
 
 # todo
-data = torch.randint(0, 2, (output_neurons, binary_input_variable_cnt))   # 3 batches of 5 bit patterns
-input_spikes = encoder(data)
-output_spikes, output_states = model(input_spikes, train=True)
+data = torch.randint(0, 2, (output_neurons, binary_input_variable_cnt)) * 0.9  # 3 batches of 5 bit patterns
+train_data = data.repeat(2000, 3)
+test_data = data.repeat(3, 3)
+input_spikes = encoder(train_data)
+_, _ = model(input_spikes, train=True)
+
+input_spikes = encoder(test_data)
+output_spikes, output_states = model(input_spikes, train=False)
+
+print(input_spikes)
+print(output_spikes)
+print(output_states)
 
 # todo: plot everything
+plt.plot(output_states)
+plt.show()
+
+# Plot inputs
+plt.figure(figsize=(10, 5))
+
+plt.subplot(2, 1, 1)
+spikes = [input_spikes[:, i].cpu().numpy() for i in range(input_spikes.shape[1])]
+raster_plot(spikes, plt.gca())
+plt.title('Input Spikes')
+plt.xlabel('Time Step')
+plt.ylabel('Neuron')
+
+# Plot output spikes using a raster plot
+plt.subplot(2, 1, 2)
+spikes = [output_spikes[:, i].cpu().numpy() for i in range(output_spikes.shape[1])]
+raster_plot(spikes, plt.gca())
+plt.title('Output Spikes')
+plt.xlabel('Time Step')
+plt.ylabel('Neuron')
+
+plt.tight_layout()
+plt.show()
+
+print(model.linear.weight)
+print(model.linear.bias)
