@@ -16,9 +16,10 @@ data_path = '/tmp/data/mnist'
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 import random
-random.seed(0)
-_ = torch.manual_seed(0)
-np.random.seed(0)
+
+random.seed(2)
+_ = torch.manual_seed(2)
+np.random.seed(2)
 
 
 # todo: check whether torch.no_grad() or detach() is needed in classes below
@@ -148,7 +149,7 @@ class OUInhibitionProcess(object):
 
         self.inhibition_decay_factor = np.exp(- dt / inhibition_tau)
         self.noise_decay_factor = np.exp(- dt / noise_tau)
-        self.total_noise_sigma = noise_sigma * np.sqrt((1. - self.noise_decay_factor ** 2) / 2. * noise_tau)
+        self.total_noise_sigma = noise_sigma # todo: * np.sqrt((1. - self.noise_decay_factor ** 2) / 2. * noise_tau)
 
     def step(self, spike_occurrences, state=None):
         if state is None:
@@ -172,8 +173,10 @@ class OUInhibitionProcess(object):
         return inhibition, noise
 
 
+# based on https://github.com/pytorch/pytorch/issues/30968#issuecomment-859084590
 def efficient_multinomial(r):
     return (r.cumsum(-1) >= torch.rand(r.shape[:-1])[..., None]).byte().argmax(-1)
+
 
 class StochasticOutputNeuronCell(nn.Module):
     def __init__(self, inhibition_process: OUInhibitionProcess, dt=0.001):
@@ -181,6 +184,7 @@ class StochasticOutputNeuronCell(nn.Module):
 
         self.inhibition_process = inhibition_process
         self.dt = dt
+        self.log_dt = np.log(dt)
 
     def forward(self, inputs, inhibition_state=None):
         if inhibition_state is None:
@@ -189,28 +193,32 @@ class StochasticOutputNeuronCell(nn.Module):
 
         inhibition, noise = inhibition_state
 
-        rates = torch.clip(torch.exp(inputs - inhibition + noise), 1e-20, 1e20)  # todo: check if clip range ok -> maybe we should throw for these extreme values instead
+        log_rates = inputs - inhibition + noise
+        input_rates = torch.exp(inputs)
 
-        total_rate = torch.sum(rates, -1, keepdim=True)
+        # more numerically stable to utilize log
+        log_total_rate = torch.logsumexp(log_rates, -1, keepdim=True)
 
         rand_val = torch.rand(
-            *total_rate.shape,
-            device=total_rate.device,
+            *log_total_rate.shape,
+            device=log_total_rate.device,
         )
 
-        spike_occurred = rand_val < self.dt * total_rate
+        # check rand_val < total_rate * dt  (within log range)
+        spike_occurred = torch.log(rand_val) < log_total_rate + self.log_dt
 
-        rel_probs = rates / total_rate
+        # here we only have to deal with input_rates as inhibition + noise cancels out
+        # (makes process more numerically stable)
+        rel_probs = input_rates / torch.sum(input_rates, dim=-1, keepdim=True)
         spike_location = efficient_multinomial(rel_probs)
 
-        out_spike_locations = F.one_hot(spike_location, num_classes=rates.shape[-1])
+        out_spike_locations = F.one_hot(spike_location, num_classes=input_rates.shape[-1])
 
         # ensures that only one output neuron can fire at a time
         out_spikes = (out_spike_locations * spike_occurred).to(dtype=inputs.dtype)
 
         # increase inhibition if a spike occured
-        spike_occurrences = torch.max(out_spikes, -1, keepdim=True).values
-        inhibition_state = self.inhibition_process.step(spike_occurrences, inhibition_state)
+        inhibition_state = self.inhibition_process.step(spike_occurred, inhibition_state)
 
         return out_spikes, inhibition_state
 
@@ -316,13 +324,13 @@ encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration,
                                                  input_encoding_rate, input_encoding_inactive_rate,
                                                  delay, dt)
 
-stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1, base_mu=1)
+stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1, base_mu=1, base_mu_bias=0.1)
 # stdp_module = custom_stdp.BayesianSTDPAdaptive(input_neurons, output_neurons, c=1, base_mu=1)
 
 inhibition_process = OUInhibitionProcess(inhibition_increase=3000, inhibition_rest=0, inhibition_tau=0.005,
                                          noise_rest=0, noise_tau=0.005, noise_sigma=50, dt=dt)
 output_cell = StochasticOutputNeuronCell(
-                              inhibition_process=inhibition_process, dt=dt)
+    inhibition_process=inhibition_process, dt=dt)
 
 model = BayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, dt),
                           output_neuron_cell=output_cell,
@@ -330,8 +338,8 @@ model = BayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, d
 
 # todo
 data = torch.randint(0, 2, (output_neurons, binary_input_variable_cnt))  # 3 batches of 5 bit patterns
-train_data = data.repeat(2000, 3)  # data.repeat(2000, 3)
-test_data = data.repeat(3, 3)
+train_data = data.repeat(666, 3)  # data.repeat(2000, 3)
+test_data = data.repeat(4, 3)
 input_spikes = encoder(train_data)
 _, _ = model(input_spikes, train=True)
 

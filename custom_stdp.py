@@ -4,9 +4,10 @@ import torch.nn as nn
 
 
 class BayesianSTDPClassic(nn.Module):
-    def __init__(self, output_size, c: float = 1, base_mu: float = 1):
+    def __init__(self, output_size, c: float = 1, base_mu: float = 1, base_mu_bias: float = 1):
         super().__init__()
         self.base_mu = base_mu
+        self.base_mu_bias = base_mu_bias
         self.output_size = output_size
 
         self.N_k = torch.ones((output_size, 1))
@@ -20,7 +21,7 @@ class BayesianSTDPClassic(nn.Module):
                 weights: torch.Tensor, biases: torch.Tensor):
         with torch.no_grad():
             mu_w = self.base_mu / self.N_k
-            mu_b = self.base_mu / torch.sum(self.N_k)
+            mu_b = self.base_mu_bias / torch.sum(self.N_k)
 
             new_weights, new_biases = apply_bayesian_stdp(input_psp, output_spikes, weights, biases,
                                                           mu_w, mu_b, self.c)
