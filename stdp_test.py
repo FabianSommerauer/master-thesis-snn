@@ -13,7 +13,7 @@ import custom_stdp
 batch_size = 128
 data_path = '/tmp/data/mnist'
 
-device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+# device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 import random
 
@@ -149,7 +149,7 @@ class OUInhibitionProcess(object):
 
         self.inhibition_decay_factor = np.exp(- dt / inhibition_tau)
         self.noise_decay_factor = np.exp(- dt / noise_tau)
-        self.total_noise_sigma = noise_sigma # todo: * np.sqrt((1. - self.noise_decay_factor ** 2) / 2. * noise_tau)
+        self.total_noise_sigma = noise_sigma  # todo: * np.sqrt((1. - self.noise_decay_factor ** 2) / 2. * noise_tau)
 
     def step(self, spike_occurrences, state=None):
         if state is None:
@@ -179,12 +179,16 @@ def efficient_multinomial(r):
 
 
 class StochasticOutputNeuronCell(nn.Module):
-    def __init__(self, inhibition_process: OUInhibitionProcess, dt=0.001):
+    def __init__(self, inhibition_process: OUInhibitionProcess, dt=0.001, collect_rates=False):
         super(StochasticOutputNeuronCell, self).__init__()
 
         self.inhibition_process = inhibition_process
         self.dt = dt
         self.log_dt = np.log(dt)
+
+        self.collect_rates = collect_rates
+        self.input_rates_history = []
+        self.log_rates_history = []
 
     def forward(self, inputs, inhibition_state=None):
         if inhibition_state is None:
@@ -195,6 +199,10 @@ class StochasticOutputNeuronCell(nn.Module):
 
         log_rates = inputs - inhibition + noise
         input_rates = torch.exp(inputs)
+
+        if self.collect_rates:
+            self.input_rates_history.append(input_rates)
+            self.log_rates_history.append(log_rates)
 
         # more numerically stable to utilize log
         log_total_rate = torch.logsumexp(log_rates, -1, keepdim=True)
@@ -329,8 +337,8 @@ test_encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration,
                                                  input_encoding_rate*2, 0,
                                                  delay, dt)
 
-stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1, base_mu=1, base_mu_bias=0.5)
-# stdp_module = custom_stdp.BayesianSTDPAdaptive(input_neurons, output_neurons, c=1)  #todo: get this to work
+stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1, base_mu=1, base_mu_bias=0.5, collect_history=True)
+# stdp_module = custom_stdp.BayesianSTDPAdaptive(input_neurons, output_neurons, c=1, collect_history=True)  #todo: get this to work
 
 inhibition_process = OUInhibitionProcess(inhibition_increase=3000, inhibition_rest=0, inhibition_tau=0.005,
                                          noise_rest=0, noise_tau=0.005, noise_sigma=50, dt=dt)
@@ -350,6 +358,7 @@ test_data = data.repeat(4, duplications)
 input_spikes = train_encoder(train_data)
 _, _ = model(input_spikes, train=True)
 
+output_cell.collect_rates = True
 input_spikes = test_encoder(test_data)
 output_spikes, output_states = model(input_spikes, train=False)
 
@@ -361,18 +370,18 @@ inhibition = [state[0] - state[1] for state in output_states]
 plt.plot(inhibition)
 plt.show()
 
-inhibition = [state[0] for state in output_states]
-noise = [state[1] for state in output_states]
-plt.plot(inhibition)
-plt.show()
-
-plt.plot(noise)
-plt.show()
+# inhibition = [state[0] for state in output_states]
+# noise = [state[1] for state in output_states]
+# plt.plot(inhibition)
+# plt.show()
+#
+# plt.plot(noise)
+# plt.show()
 
 # Plot inputs
-plt.figure(figsize=(10, 5))
+plt.figure(figsize=(10, 7))
 
-plt.subplot(2, 1, 1)
+plt.subplot(3, 1, 1)
 spikes = [input_spikes[:, i].cpu().numpy() for i in range(input_spikes.shape[1])]
 raster_plot(spikes, plt.gca())
 plt.title('Input Spikes')
@@ -380,18 +389,40 @@ plt.xlabel('Time Step')
 plt.ylabel('Neuron')
 
 # Plot output spikes using a raster plot
-plt.subplot(2, 1, 2)
+plt.subplot(3, 1, 2)
 spikes = [output_spikes[:, i].cpu().numpy() for i in range(output_spikes.shape[1])]
 raster_plot(spikes, plt.gca())
 plt.title('Output Spikes')
 plt.xlabel('Time Step')
 plt.ylabel('Neuron')
 
+plt.subplot(3, 1, 3)
+input_rates = torch.stack(output_cell.input_rates_history, dim=0).cpu().numpy()
+normalized_rates = input_rates / np.sum(input_rates, axis=-1, keepdims=True)
+for i in range(output_neurons):
+    plt.plot(normalized_rates[:, i], label=f'Rate Output neuron {i}')
+plt.title('Relative Firing Rates')
+plt.xlabel('Time Step')
+plt.ylabel('Rate')
+plt.legend()
+
 plt.tight_layout()
 plt.show()
 
 print(model.linear.weight)
 print(model.linear.bias)
+
+mu_w_history = torch.stack(stdp_module.mu_w_history)
+mu_b_history = torch.stack(stdp_module.mu_b_history)
+
+# todo: this has different interpretations for different STDP modules -> fix
+plt.plot(torch.mean(mu_w_history, -1)[:, 0], label='mu_w 0')
+plt.plot(torch.mean(mu_w_history, -1)[:, 1], label='mu_w 1')
+plt.plot(torch.mean(mu_w_history, -1)[:, 2], label='mu_w 2')
+plt.plot(torch.mean(mu_b_history, -1)[:], label='mu_b')
+plt.yscale('log')
+plt.legend()
+plt.show()
 
 
 # todo: improve plots above (colour spikes based on group (separate them appropriately) + whether correctly predicted)
