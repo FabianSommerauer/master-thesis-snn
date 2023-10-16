@@ -39,13 +39,13 @@ class BayesianSTDPClassic(nn.Module):
 
 
 class BayesianSTDPAdaptive(nn.Module):
-    def __init__(self, input_size, output_size, c: float = 1, base_mu: float = 1):
+    def __init__(self, input_size, output_size, c: float = 1):
         super().__init__()
         self.input_size = input_size
         self.output_size = output_size
 
-        self.mu_w = torch.ones((output_size, input_size)) * base_mu
-        self.mu_b = torch.ones((output_size,)) * base_mu
+        self.mu_w = torch.ones((output_size, input_size))
+        self.mu_b = torch.ones((output_size,))
 
         self.weight_first_moment = None
         self.weight_second_moment = None
@@ -55,8 +55,8 @@ class BayesianSTDPAdaptive(nn.Module):
         self.c = c
 
     def reset(self):
-        self.mu_w = torch.ones((self.output_size, self.input_size)) * self.base_mu
-        self.mu_b = torch.ones((self.output_size,)) * self.base_mu
+        self.mu_w = torch.ones((self.output_size, self.input_size))
+        self.mu_b = torch.ones((self.output_size,))
 
         self.weight_first_moment = None
         self.weight_second_moment = None
@@ -65,22 +65,23 @@ class BayesianSTDPAdaptive(nn.Module):
 
     def forward(self, input_psp: torch.Tensor, output_spikes: torch.Tensor,
                 weights: torch.Tensor, biases: torch.Tensor):
-        if self.weight_first_moment is None:
-            self.weight_first_moment = weights
-            self.weight_second_moment = weights ** 2
-            self.bias_first_moment = biases
-            self.bias_second_moment = biases ** 2
-
         with torch.no_grad():
             new_weights, new_biases = apply_bayesian_stdp(input_psp, output_spikes, weights, biases,
                                                           self.mu_w, self.mu_b, self.c)
 
-            # update moments and learning rates
-            self.weight_first_moment = self.mu_w * new_weights + (1 - self.mu_w) * self.weight_first_moment
-            self.weight_second_moment = self.mu_w * new_weights ** 2 + (1 - self.mu_w) * self.weight_second_moment
+            if self.weight_first_moment is None:
+                # start with variance of 1 to avoid getting stuck on initial parameter values
+                self.weight_first_moment = torch.zeros_like(weights)
+                self.weight_second_moment = torch.ones_like(weights)
+                self.bias_first_moment = torch.zeros_like(biases)
+                self.bias_second_moment = torch.ones_like(biases)
+            else:
+                # update moments and learning rates
+                self.weight_first_moment = self.mu_w * new_weights + (1 - self.mu_w) * self.weight_first_moment
+                self.weight_second_moment = self.mu_w * new_weights ** 2 + (1 - self.mu_w) * self.weight_second_moment
 
-            self.bias_first_moment = self.mu_b * biases + (1 - self.mu_b) * self.bias_first_moment
-            self.bias_second_moment = self.mu_b * biases ** 2 + (1 - self.mu_b) * self.bias_second_moment
+                self.bias_first_moment = self.mu_b * biases + (1 - self.mu_b) * self.bias_first_moment
+                self.bias_second_moment = self.mu_b * biases ** 2 + (1 - self.mu_b) * self.bias_second_moment
 
             # adaptive learning rates with variance tracking
             self.mu_w = (self.weight_second_moment - self.weight_first_moment ** 2) / (

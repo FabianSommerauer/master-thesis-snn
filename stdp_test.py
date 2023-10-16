@@ -307,8 +307,9 @@ transform = transforms.Compose([
 # test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=True)
 
 
+duplications = 3
 binary_input_variable_cnt = 4
-input_neurons = binary_input_variable_cnt * 6
+input_neurons = binary_input_variable_cnt * 2 * duplications
 output_neurons = 3
 
 dt = 0.001
@@ -320,12 +321,16 @@ delay = 0.01
 input_encoding_rate = 100
 input_encoding_inactive_rate = 10
 
-encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration,
+train_encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration,
                                                  input_encoding_rate, input_encoding_inactive_rate,
                                                  delay, dt)
 
-stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1, base_mu=1, base_mu_bias=0.1)
-# stdp_module = custom_stdp.BayesianSTDPAdaptive(input_neurons, output_neurons, c=1, base_mu=1)
+test_encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration,
+                                                 input_encoding_rate*2, 0,
+                                                 delay, dt)
+
+stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1, base_mu=1, base_mu_bias=0.5)
+# stdp_module = custom_stdp.BayesianSTDPAdaptive(input_neurons, output_neurons, c=1)  #todo: get this to work
 
 inhibition_process = OUInhibitionProcess(inhibition_increase=3000, inhibition_rest=0, inhibition_tau=0.005,
                                          noise_rest=0, noise_tau=0.005, noise_sigma=50, dt=dt)
@@ -338,12 +343,14 @@ model = BayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, d
 
 # todo
 data = torch.randint(0, 2, (output_neurons, binary_input_variable_cnt))  # 3 batches of 5 bit patterns
-train_data = data.repeat(666, 3)  # data.repeat(2000, 3)
-test_data = data.repeat(4, 3)
-input_spikes = encoder(train_data)
+print(data)
+
+train_data = data.repeat(666, duplications)  # data.repeat(2000, 3)
+test_data = data.repeat(4, duplications)
+input_spikes = train_encoder(train_data)
 _, _ = model(input_spikes, train=True)
 
-input_spikes = encoder(test_data)
+input_spikes = test_encoder(test_data)
 output_spikes, output_states = model(input_spikes, train=False)
 
 print(input_spikes)
@@ -385,3 +392,8 @@ plt.show()
 
 print(model.linear.weight)
 print(model.linear.bias)
+
+
+# todo: improve plots above (colour spikes based on group (separate them appropriately) + whether correctly predicted)
+# todo: plots of relative rates for each neuron based on input
+# todo: plots of bias convergence to log probabilities (use differently sized signals)
