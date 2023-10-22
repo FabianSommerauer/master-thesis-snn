@@ -1,10 +1,12 @@
 from typing import Literal, Tuple
 import torch
 import torch.nn as nn
+from my_metrics import LearningRatesTracker
 
 
 class BayesianSTDPClassic(nn.Module):
-    def __init__(self, output_size, c: float = 1, base_mu: float = 1, base_mu_bias: float = 1, collect_history: bool = False):
+    def __init__(self, output_size, c: float = 1, base_mu: float = 1, base_mu_bias: float = 1,
+                 collect_history: bool = False):
         super().__init__()
         self.base_mu = base_mu
         self.base_mu_bias = base_mu_bias
@@ -14,15 +16,11 @@ class BayesianSTDPClassic(nn.Module):
 
         self.c = c
 
-        # todo: move this to a separate class
-        self.collect_history = collect_history
-        self.mu_w_history = []
-        self.mu_b_history = []
+        self.learning_rates_tracker = LearningRatesTracker(is_active=collect_history)
 
     def reset(self):
         self.N_k = torch.ones((self.output_size, 1))
-        self.mu_w_history = []
-        self.mu_b_history = []
+        self.learning_rates_tracker.reset()  # todo: should this be here?
 
     def forward(self, input_psp: torch.Tensor, output_spikes: torch.Tensor,
                 weights: torch.Tensor, biases: torch.Tensor):
@@ -42,9 +40,8 @@ class BayesianSTDPClassic(nn.Module):
 
             self.N_k += total_out_spikes[:, None]
 
-            if self.collect_history:
-                self.mu_w_history.append(mu_w.clone())
-                self.mu_b_history.append(mu_b.clone())
+            # collect learning rates for plotting
+            self.learning_rates_tracker(mu_w, mu_b)
 
             return new_weights, new_biases
 
@@ -65,14 +62,11 @@ class BayesianSTDPAdaptive(nn.Module):
 
         self.c = c
 
-        # todo: move this to a separate class
-        self.collect_history = collect_history
-        self.mu_w_history = []
-        self.mu_b_history = []
-        self.weight_first_moment_history = []
-        self.weight_second_moment_history = []
-        self.bias_first_moment_history = []
-        self.bias_second_moment_history = []
+        self.learning_rates_tracker = LearningRatesTracker(is_active=collect_history)
+        # self.weight_first_moment_history = []
+        # self.weight_second_moment_history = []
+        # self.bias_first_moment_history = []
+        # self.bias_second_moment_history = []
 
     def reset(self):
         self.mu_w = torch.ones((self.output_size, self.input_size))
@@ -83,12 +77,7 @@ class BayesianSTDPAdaptive(nn.Module):
         self.bias_first_moment = None
         self.bias_second_moment = None
 
-        self.mu_w_history = []
-        self.mu_b_history = []
-        self.weight_first_moment_history = []
-        self.weight_second_moment_history = []
-        self.bias_first_moment_history = []
-        self.bias_second_moment_history = []
+        self.learning_rates_tracker.reset()  # todo: should this be here?
 
     def forward(self, input_psp: torch.Tensor, output_spikes: torch.Tensor,
                 weights: torch.Tensor, biases: torch.Tensor):
@@ -116,13 +105,8 @@ class BayesianSTDPAdaptive(nn.Module):
             self.mu_b = (self.bias_second_moment - self.bias_first_moment ** 2) / (
                     torch.exp(-self.bias_first_moment) + 1.0)
 
-            if self.collect_history:
-                self.mu_w_history.append(self.mu_w.clone())
-                self.mu_b_history.append(self.mu_b.clone())
-                self.weight_first_moment_history.append(self.weight_first_moment.clone())
-                self.weight_second_moment_history.append(self.weight_second_moment.clone())
-                self.bias_first_moment_history.append(self.bias_first_moment.clone())
-                self.bias_second_moment_history.append(self.bias_second_moment.clone())
+            # collect learning rates for plotting
+            self.learning_rates_tracker(self.mu_w, self.mu_b)
 
             return new_weights, new_biases
 

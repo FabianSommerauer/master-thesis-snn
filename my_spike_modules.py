@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 from torch import Tensor
-
+from my_metrics import SpikeRateTracker, InhibitionStateTracker
 
 # todo: check whether torch.no_grad() or detach() is needed in classes below
 
@@ -119,9 +119,7 @@ class StochasticOutputNeuronCell(nn.Module):
         self.dt = dt
         self.log_dt = np.log(dt)
 
-        self.collect_rates = collect_rates
-        self.input_rates_history = []
-        self.log_rates_history = []
+        self.rate_tracker = SpikeRateTracker(is_active=collect_rates)
 
     def forward(self, inputs, inhibition_state=None):
         if inhibition_state is None:
@@ -133,9 +131,8 @@ class StochasticOutputNeuronCell(nn.Module):
         log_rates = inputs - inhibition + noise
         input_rates = torch.exp(inputs)
 
-        if self.collect_rates:
-            self.input_rates_history.append(input_rates)
-            self.log_rates_history.append(log_rates)
+        # collect rates for plotting
+        self.rate_tracker.update(input_rates, log_rates)
 
         # more numerically stable to utilize log
         log_total_rate = torch.logsumexp(log_rates, -1, keepdim=True)
@@ -174,7 +171,7 @@ class BayesianSTDPModel(nn.Module):
         self.output_neuron_cell = output_neuron_cell
 
         self.input_psp = input_psp
-        self.acc_states = acc_states
+        self.state_metric = InhibitionStateTracker(is_active=acc_states)
 
         self.stdp_module = stdp_module
 
@@ -187,8 +184,6 @@ class BayesianSTDPModel(nn.Module):
             input_psps = self.input_psp(input_spikes)
 
             z_out_acc = []
-            if self.acc_states:
-                state_acc = []
 
             for ts in range(seq_length):
                 input_psp = input_psps[ts]
@@ -196,8 +191,9 @@ class BayesianSTDPModel(nn.Module):
                 z_out, z_state = self.output_neuron_cell(z_in, z_state)
 
                 z_out_acc.append(z_out)
-                if self.acc_states:
-                    state_acc.append(z_state)
+
+                # collect inhibition/noise states for plotting
+                self.state_metric(z_state)
 
                 if train:
                     new_weights, new_biases = self.stdp_module(input_psp, z_out,
@@ -206,5 +202,4 @@ class BayesianSTDPModel(nn.Module):
                     self.linear.weight.data = new_weights
                     self.linear.bias.data = new_biases
 
-            return torch.stack(z_out_acc), state_acc if self.acc_states else z_state
-
+            return torch.stack(z_out_acc), z_state

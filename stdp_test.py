@@ -11,10 +11,10 @@ data_path = '/tmp/data/mnist'
 
 # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-
-random.seed(2)
-_ = torch.manual_seed(2)
-np.random.seed(2)
+seed = 44
+random.seed(seed)
+_ = torch.manual_seed(seed)
+np.random.seed(seed)
 
 
 # Define a function to create a raster plot for spikes
@@ -83,14 +83,16 @@ def get_color_picker(group_colors, group_time_ranges, default_color='black'):
 # plt.show()
 
 
-test_input_spikes = torch.tensor(
-    np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2, (
-        1000, 1)) * np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2,
-                                                                                                                (1000,
-                                                                                                                 1)))
-plt.plot(test_input_spikes)
-plt.plot(BinaryTimedPSP(0.01)(test_input_spikes).cpu().numpy())
-plt.show()
+# Test Binary Timed PSP
+
+# test_input_spikes = torch.tensor(
+#     np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2, (
+#         1000, 1)) * np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2, (1000, 1)) * np.random.randint(0, 2,
+#                                                                                                                 (1000,
+#                                                                                                                  1)))
+# plt.plot(test_input_spikes)
+# plt.plot(BinaryTimedPSP(0.01)(test_input_spikes).cpu().numpy())
+# plt.show()
 
 transform = transforms.Compose([
     transforms.Resize((28, 28)),
@@ -107,8 +109,8 @@ transform = transforms.Compose([
 # test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=True)
 
 
-duplications = 3
-binary_input_variable_cnt = 4
+duplications = 1
+binary_input_variable_cnt = 30
 input_neurons = binary_input_variable_cnt * 2 * duplications
 output_neurons = 3
 
@@ -139,10 +141,12 @@ output_cell = StochasticOutputNeuronCell(
 
 model = BayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, dt),
                           output_neuron_cell=output_cell,
-                          stdp_module=stdp_module, acc_states=True)
+                          stdp_module=stdp_module, acc_states=False)
 
 # todo
-data = torch.randint(0, 2, (output_neurons, binary_input_variable_cnt))  # 3 batches of 5 bit patterns
+data = torch.multinomial(torch.tensor([0.85, 0.15]), output_neurons * binary_input_variable_cnt, replacement=True)
+data = data.reshape(output_neurons, binary_input_variable_cnt)
+#data = torch.randint(0, 2, (output_neurons, binary_input_variable_cnt))  # 3 batches of 5 bit patterns
 print(data)
 
 pattern_duration = presentation_duration + delay
@@ -156,23 +160,28 @@ _, _ = model(input_spikes, train=True)
 # todo: check what is actually saved here
 torch.save(model.state_dict(), "trained_bayesian_stdp_model.pth")
 
+# model.load_state_dict(torch.load("trained_bayesian_stdp_model.pth"))
+
 # todo: cleaner approach needed
 test_data_time_ranges = [[((output_neurons * i + offset) * pattern_duration,
                            (output_neurons * i + offset) * pattern_duration)
                           for i in range(4)]
                          for offset in range(output_neurons)]
 
-output_cell.collect_rates = True
+output_cell.rate_tracker.is_active = True
+output_cell.rate_tracker.reset()
+model.state_metric.is_active = True
+model.state_metric.reset()
+
+
+
 input_spikes = test_encoder(test_data)
-output_spikes, output_states = model(input_spikes, train=False)
+output_spikes, _ = model(input_spikes, train=False)
 
 print(input_spikes)
 print(output_spikes)
-print(output_states)
 
-inhibition = [state[0] - state[1] for state in output_states]
-plt.plot(inhibition)
-plt.show()
+model.state_metric.plot()
 
 # inhibition = [state[0] for state in output_states]
 # noise = [state[1] for state in output_states]
@@ -195,20 +204,14 @@ plt.ylabel('Neuron')
 # Plot output spikes using a raster plot
 plt.subplot(3, 1, 2)
 spikes = [output_spikes[:, i].cpu().numpy() for i in range(output_spikes.shape[1])]
-raster_plot_multi_color(spikes, plt.gca(), get_color_picker(("red", "green", "blue"), test_data_time_ranges))
+raster_plot(spikes, plt.gca())
+# raster_plot_multi_color(spikes, plt.gca(), get_color_picker(("red", "green", "blue"), test_data_time_ranges))
 plt.title('Output Spikes')
 plt.xlabel('Time Step')
 plt.ylabel('Neuron')
 
 plt.subplot(3, 1, 3)
-input_rates = torch.stack(output_cell.input_rates_history, dim=0).cpu().numpy()
-normalized_rates = input_rates / np.sum(input_rates, axis=-1, keepdims=True)
-for i in range(output_neurons):
-    plt.plot(normalized_rates[:, i], label=f'Rate Output neuron {i}')
-plt.title('Relative Firing Rates')
-plt.xlabel('Time Step')
-plt.ylabel('Rate')
-plt.legend()
+output_cell.rate_tracker.plot_relative_firing_rates(plt.gca())
 
 plt.tight_layout()
 plt.show()
@@ -216,18 +219,10 @@ plt.show()
 print(model.linear.weight)
 print(model.linear.bias)
 
-mu_w_history = torch.stack(stdp_module.mu_w_history)
-mu_b_history = torch.stack(stdp_module.mu_b_history)
-
-# todo: this has different interpretations for different STDP modules -> fix
-plt.plot(torch.mean(mu_w_history, -1)[:, 0], label='mu_w 0')
-plt.plot(torch.mean(mu_w_history, -1)[:, 1], label='mu_w 1')
-plt.plot(torch.mean(mu_w_history, -1)[:, 2], label='mu_w 2')
-plt.plot(torch.mean(mu_b_history, -1)[:], label='mu_b')
-plt.yscale('log')
-plt.legend()
-plt.show()
+stdp_module.learning_rates_tracker.plot()
 
 # todo: improve plots above (colour spikes based on group (separate them appropriately) + whether correctly predicted)
 # todo: plots of relative rates for each neuron based on input
 # todo: plots of bias convergence to log probabilities (use differently sized signals)
+
+# todo: investigate resistance to overlapping patterns and requirement for sparseness
