@@ -5,6 +5,8 @@ import random
 
 import custom_stdp
 from my_spike_modules import *
+from my_utils import spike_in_range
+from my_plot_utils import raster_plot, raster_plot_multi_color, raster_plot_multi_color_per_train
 
 batch_size = 128
 data_path = '/tmp/data/mnist'
@@ -15,33 +17,6 @@ seed = 44
 random.seed(seed)
 _ = torch.manual_seed(seed)
 np.random.seed(seed)
-
-
-# Define a function to create a raster plot for spikes
-def raster_plot(spikes, ax, color='b'):
-    for i, spike_train in enumerate(spikes):
-        ax.eventplot(np.where(spike_train > 0)[0], lineoffsets=i, linelengths=0.7, colors=color)
-
-
-def raster_plot_multi_color(spikes, ax, color_picker):
-    for i, spike_train in enumerate(spikes):
-        spike_coords = np.where(spike_train > 0)[0]
-        colors = color_picker(i, spike_coords)
-        ax.eventplot(spike_coords, lineoffsets=i, linelengths=0.7, colors=colors)
-
-
-def get_color_picker(group_colors, group_time_ranges, default_color='black'):
-    def color_picker(group, spike_coords):
-        in_range = np.zeros(len(spike_coords), dtype=bool)
-
-        ranges = group_time_ranges[group]
-        for (range_start, range_end) in ranges:
-            in_range |= ((spike_coords <= range_end) & (spike_coords >= range_start))
-
-        return np.where(in_range, group_colors[group], default_color).tolist()
-
-    return color_picker
-
 
 # Spike encoding test - TODO
 
@@ -146,25 +121,24 @@ model = BayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, d
 # todo
 data = torch.multinomial(torch.tensor([0.85, 0.15]), output_neurons * binary_input_variable_cnt, replacement=True)
 data = data.reshape(output_neurons, binary_input_variable_cnt)
-#data = torch.randint(0, 2, (output_neurons, binary_input_variable_cnt))  # 3 batches of 5 bit patterns
+# data = torch.randint(0, 2, (output_neurons, binary_input_variable_cnt))  # 3 batches of 5 bit patterns
 print(data)
 
 pattern_duration = presentation_duration + delay
 
-
 train_data = data.repeat(666, duplications)  # data.repeat(2000, 3)
 test_data = data.repeat(4, duplications)
 input_spikes = train_encoder(train_data)
-_, _ = model(input_spikes, train=True)
+# _, _ = model(input_spikes, train=True)
 
 # todo: check what is actually saved here
-torch.save(model.state_dict(), "trained_bayesian_stdp_model.pth")
+# torch.save(model.state_dict(), "trained_bayesian_stdp_model.pth")
 
-# model.load_state_dict(torch.load("trained_bayesian_stdp_model.pth"))
+model.load_state_dict(torch.load("trained_bayesian_stdp_model.pth"))
 
 # todo: cleaner approach needed
-test_data_time_ranges = [[((output_neurons * i + offset) * pattern_duration,
-                           (output_neurons * i + offset) * pattern_duration)
+test_data_time_ranges = [[((output_neurons * i + offset) * pattern_duration*1000 - delay*1000/2,
+                           (output_neurons * i + offset + 1) * pattern_duration*1000 - delay*1000/2)
                           for i in range(4)]
                          for offset in range(output_neurons)]
 
@@ -172,8 +146,6 @@ output_cell.rate_tracker.is_active = True
 output_cell.rate_tracker.reset()
 model.state_metric.is_active = True
 model.state_metric.reset()
-
-
 
 input_spikes = test_encoder(test_data)
 output_spikes, _ = model(input_spikes, train=False)
@@ -191,26 +163,34 @@ model.state_metric.plot()
 # plt.plot(noise)
 # plt.show()
 
+group_colors = ("tab:orange", "tab:green", "tab:blue")
+allowed_colors = [[1,], [0,], [2,]]  # todo: find these by finding the correct output neuron for each pattern
+
 # Plot inputs
 plt.figure(figsize=(10, 7))
 
 plt.subplot(3, 1, 1)
+first_ax = plt.gca()
 spikes = [input_spikes[:, i].cpu().numpy() for i in range(input_spikes.shape[1])]
-raster_plot(spikes, plt.gca())
+# raster_plot(plt.gca(), spikes)
+raster_plot_multi_color(plt.gca(), spikes, test_data_time_ranges, group_colors)
 plt.title('Input Spikes')
 plt.xlabel('Time Step')
 plt.ylabel('Neuron')
 
 # Plot output spikes using a raster plot
 plt.subplot(3, 1, 2)
+plt.gca().sharex(first_ax)
 spikes = [output_spikes[:, i].cpu().numpy() for i in range(output_spikes.shape[1])]
-raster_plot(spikes, plt.gca())
+raster_plot_multi_color(plt.gca(), spikes, test_data_time_ranges, group_colors, default_color='black',
+                        allowed_colors_per_train=allowed_colors)
 # raster_plot_multi_color(spikes, plt.gca(), get_color_picker(("red", "green", "blue"), test_data_time_ranges))
 plt.title('Output Spikes')
 plt.xlabel('Time Step')
 plt.ylabel('Neuron')
 
 plt.subplot(3, 1, 3)
+plt.gca().sharex(first_ax)
 output_cell.rate_tracker.plot_relative_firing_rates(plt.gca())
 
 plt.tight_layout()

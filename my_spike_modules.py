@@ -43,6 +43,8 @@ class SpikePopulationGroupBatchToTimeEncoder(nn.Module):
         combined = rearrange(padded, 't b ... i n -> (b t) ... (i n)')
         return combined
 
+    #def get_time_ranges_for_patterns(self, ): todo
+
 
 class BinaryTimedPSP(nn.Module):
     def __init__(self, sigma=0.1, dt=0.001):
