@@ -7,6 +7,7 @@ from einops import rearrange
 from torch import Tensor
 from my_metrics import SpikeRateTracker, InhibitionStateTracker
 
+
 # todo: check whether torch.no_grad() or detach() is needed in classes below
 
 class SpikePopulationGroupEncoder(nn.Module):
@@ -43,7 +44,18 @@ class SpikePopulationGroupBatchToTimeEncoder(nn.Module):
         combined = rearrange(padded, 't b ... i n -> (b t) ... (i n)')
         return combined
 
-    #def get_time_ranges_for_patterns(self, ): todo
+    def get_time_ranges_for_patterns(self, pattern_order, epsilon=1e-5):
+        total_len = self.base_encoder.seq_length + self.delay_shift
+        # todo: check with epsilon
+        time_ranges = [(i * total_len - epsilon, i * total_len + total_len - epsilon)
+                       for i in range(len(pattern_order))]
+
+        distinct_pattern_count = len(np.unique(pattern_order))
+        grouped_time_ranges = [[] for _ in range(distinct_pattern_count)]
+        for index, time_range in zip(pattern_order, time_ranges):
+            grouped_time_ranges[index].append(time_range)
+
+        return grouped_time_ranges
 
 
 class BinaryTimedPSP(nn.Module):

@@ -5,7 +5,7 @@ import random
 
 import custom_stdp
 from my_spike_modules import *
-from my_utils import spike_in_range
+from my_utils import spike_in_range, get_neuron_pattern_mapping
 from my_plot_utils import raster_plot, raster_plot_multi_color, raster_plot_multi_color_per_train
 
 batch_size = 128
@@ -85,6 +85,9 @@ transform = transforms.Compose([
 
 
 duplications = 1
+train_repeats = 666
+test_repeats = 4
+
 binary_input_variable_cnt = 30
 input_neurons = binary_input_variable_cnt * 2 * duplications
 output_neurons = 3
@@ -126,9 +129,19 @@ print(data)
 
 pattern_duration = presentation_duration + delay
 
-train_data = data.repeat(666, duplications)  # data.repeat(2000, 3)
-test_data = data.repeat(4, duplications)
+pattern_order = torch.tensor([0, 1, 2])
+train_pattern_order = pattern_order.repeat(train_repeats)
+test_pattern_order = pattern_order.repeat(test_repeats)
+
+
+train_data = data.repeat(train_repeats, duplications)  # data.repeat(2000, 3)
+test_data = data.repeat(test_repeats, duplications)
 input_spikes = train_encoder(train_data)
+
+train_time_ranges = train_encoder.get_time_ranges_for_patterns(train_pattern_order)
+test_time_ranges = test_encoder.get_time_ranges_for_patterns(test_pattern_order)
+
+
 # _, _ = model(input_spikes, train=True)
 
 # todo: check what is actually saved here
@@ -136,11 +149,6 @@ input_spikes = train_encoder(train_data)
 
 model.load_state_dict(torch.load("trained_bayesian_stdp_model.pth"))
 
-# todo: cleaner approach needed
-test_data_time_ranges = [[((output_neurons * i + offset) * pattern_duration*1000 - delay*1000/2,
-                           (output_neurons * i + offset + 1) * pattern_duration*1000 - delay*1000/2)
-                          for i in range(4)]
-                         for offset in range(output_neurons)]
 
 output_cell.rate_tracker.is_active = True
 output_cell.rate_tracker.reset()
@@ -149,6 +157,9 @@ model.state_metric.reset()
 
 input_spikes = test_encoder(test_data)
 output_spikes, _ = model(input_spikes, train=False)
+
+# todo: this should be done on the train data (maybe only last few patterns)
+neuron_mapping = get_neuron_pattern_mapping(output_spikes.cpu().numpy(), test_time_ranges)
 
 print(input_spikes)
 print(output_spikes)
@@ -164,7 +175,7 @@ model.state_metric.plot()
 # plt.show()
 
 group_colors = ("tab:orange", "tab:green", "tab:blue")
-allowed_colors = [[1,], [0,], [2,]]  # todo: find these by finding the correct output neuron for each pattern
+allowed_colors = [[idx,] for idx in neuron_mapping]  # todo: find these by finding the correct output neuron for each pattern
 
 # Plot inputs
 plt.figure(figsize=(10, 7))
@@ -173,7 +184,7 @@ plt.subplot(3, 1, 1)
 first_ax = plt.gca()
 spikes = [input_spikes[:, i].cpu().numpy() for i in range(input_spikes.shape[1])]
 # raster_plot(plt.gca(), spikes)
-raster_plot_multi_color(plt.gca(), spikes, test_data_time_ranges, group_colors)
+raster_plot_multi_color(plt.gca(), spikes, test_time_ranges, group_colors)
 plt.title('Input Spikes')
 plt.xlabel('Time Step')
 plt.ylabel('Neuron')
@@ -182,7 +193,7 @@ plt.ylabel('Neuron')
 plt.subplot(3, 1, 2)
 plt.gca().sharex(first_ax)
 spikes = [output_spikes[:, i].cpu().numpy() for i in range(output_spikes.shape[1])]
-raster_plot_multi_color(plt.gca(), spikes, test_data_time_ranges, group_colors, default_color='black',
+raster_plot_multi_color(plt.gca(), spikes, test_time_ranges, group_colors, default_color='black',
                         allowed_colors_per_train=allowed_colors)
 # raster_plot_multi_color(spikes, plt.gca(), get_color_picker(("red", "green", "blue"), test_data_time_ranges))
 plt.title('Output Spikes')
@@ -191,7 +202,8 @@ plt.ylabel('Neuron')
 
 plt.subplot(3, 1, 3)
 plt.gca().sharex(first_ax)
-output_cell.rate_tracker.plot_relative_firing_rates(plt.gca())
+neuron_colors = [group_colors[idx] for idx in neuron_mapping]
+output_cell.rate_tracker.plot_relative_firing_rates(plt.gca(), colors=neuron_colors)
 
 plt.tight_layout()
 plt.show()
