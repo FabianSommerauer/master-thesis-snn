@@ -20,8 +20,11 @@ class SpikePopulationGroupEncoder(nn.Module):
 
     def forward(self, input_values: Tensor) -> Tensor:
         # assumes input values within [0,1] (ideally binary)
-        neuron_active = torch.stack((input_values, (1 - input_values) * self.inactive_factor), dim=-1)
-        encoded = self.encoder(neuron_active)
+        neuron_active = torch.stack((input_values, (1 - input_values)), dim=-1)
+
+        relative_rates = (1 - self.inactive_factor) * neuron_active + self.inactive_factor
+
+        encoded = self.encoder(relative_rates)
         return encoded
 
 
@@ -44,11 +47,16 @@ class SpikePopulationGroupBatchToTimeEncoder(nn.Module):
         combined = rearrange(padded, 't b ... i n -> (b t) ... (i n)')
         return combined
 
-    def get_time_ranges_for_patterns(self, pattern_order, epsilon=1e-5):
+    def get_time_ranges(self, pattern_count, epsilon=1e-5):
         total_len = self.base_encoder.seq_length + self.delay_shift
         # todo: check with epsilon
         time_ranges = [(i * total_len - epsilon, i * total_len + total_len - epsilon)
-                       for i in range(len(pattern_order))]
+                       for i in range(pattern_count)]
+
+        return time_ranges
+
+    def get_time_ranges_for_patterns(self, pattern_order, epsilon=1e-5):
+        time_ranges = self.get_time_ranges(len(pattern_order), epsilon)
 
         distinct_pattern_count = len(np.unique(pattern_order))
         grouped_time_ranges = [[] for _ in range(distinct_pattern_count)]

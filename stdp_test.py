@@ -2,10 +2,11 @@ import matplotlib.pyplot as plt
 import torch
 from torchvision import transforms
 import random
+import torchmetrics
 
 import custom_stdp
 from my_spike_modules import *
-from my_utils import spike_in_range, get_neuron_pattern_mapping
+from my_utils import spike_in_range, get_neuron_pattern_mapping, get_predictions
 from my_plot_utils import raster_plot, raster_plot_multi_color, raster_plot_multi_color_per_train
 
 batch_size = 128
@@ -88,7 +89,7 @@ duplications = 1
 train_repeats = 666
 test_repeats = 4
 
-binary_input_variable_cnt = 30
+binary_input_variable_cnt = 10
 input_neurons = binary_input_variable_cnt * 2 * duplications
 output_neurons = 3
 
@@ -101,6 +102,7 @@ delay = 0.01
 input_encoding_rate = 100
 input_encoding_inactive_rate = 10
 
+# todo: test encoding that does not need second neuron for each input
 train_encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration,
                                                        input_encoding_rate, input_encoding_inactive_rate,
                                                        delay, dt)
@@ -121,8 +123,9 @@ model = BayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, d
                           output_neuron_cell=output_cell,
                           stdp_module=stdp_module, acc_states=False)
 
+# todo: test how much overlaps affect performance
 # todo
-data = torch.multinomial(torch.tensor([0.85, 0.15]), output_neurons * binary_input_variable_cnt, replacement=True)
+data = torch.multinomial(torch.tensor([0.5, 0.5]), output_neurons * binary_input_variable_cnt, replacement=True)
 data = data.reshape(output_neurons, binary_input_variable_cnt)
 # data = torch.randint(0, 2, (output_neurons, binary_input_variable_cnt))  # 3 batches of 5 bit patterns
 print(data)
@@ -140,14 +143,19 @@ input_spikes = train_encoder(train_data)
 
 train_time_ranges = train_encoder.get_time_ranges_for_patterns(train_pattern_order)
 test_time_ranges = test_encoder.get_time_ranges_for_patterns(test_pattern_order)
+test_time_ranges_ungrouped = test_encoder.get_time_ranges(len(test_pattern_order))
 
 
-# _, _ = model(input_spikes, train=True)
+weight_init = 1  # np.log(1./input_neurons) + np.log(1)  # todo
+bias_init = 2  # np.log(1./output_neurons)
+model.linear.weight.data.fill_(weight_init)
+model.linear.bias.data.fill_(bias_init)
+_, _ = model(input_spikes, train=True)
 
 # todo: check what is actually saved here
 # torch.save(model.state_dict(), "trained_bayesian_stdp_model.pth")
 
-model.load_state_dict(torch.load("trained_bayesian_stdp_model.pth"))
+# model.load_state_dict(torch.load("trained_bayesian_stdp_model.pth"))
 
 
 output_cell.rate_tracker.is_active = True
@@ -210,6 +218,11 @@ plt.show()
 
 print(model.linear.weight)
 print(model.linear.bias)
+
+
+preds = get_predictions(output_spikes, test_time_ranges_ungrouped, neuron_mapping)
+acc = torchmetrics.functional.accuracy(torch.tensor(preds), test_pattern_order, task="multiclass", num_classes=3)
+print(acc)
 
 stdp_module.learning_rates_tracker.plot()
 

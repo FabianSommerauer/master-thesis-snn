@@ -29,3 +29,29 @@ def get_neuron_pattern_mapping(output_spikes, pattern_time_ranges):
         neuron_pattern_mapping.append(np.argmax(spike_counts))
 
     return neuron_pattern_mapping
+
+
+def get_predictions(output_spikes, time_ranges, pattern_mapping):
+    """Get predictions by finding most responsive output neuron in each time range"""
+
+    time_range_count = len(time_ranges)
+    output_neuron_num = output_spikes.shape[-1]
+
+    spike_counts = np.zeros((output_neuron_num,))
+
+    predictions = np.ones((time_range_count,)) * -1.
+
+    for range_idx, (range_start, range_end) in enumerate(time_ranges):
+        for neuron_index in range(output_neuron_num):
+            neuron_spikes = output_spikes[:, neuron_index]
+            spike_times = np.where(neuron_spikes > 0)[0]
+
+            spike_counts[neuron_index] = np.sum((spike_times <= range_end) & (spike_times >= range_start))
+
+        if np.sum(spike_counts) == 0:
+            predictions[range_idx] = -1.
+
+        max_neuron = np.argmax(spike_counts)
+        predictions[range_idx] = pattern_mapping[max_neuron]
+
+    return predictions
