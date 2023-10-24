@@ -103,6 +103,7 @@ input_encoding_rate = 100
 input_encoding_inactive_rate = 10
 
 # todo: test encoding that does not need second neuron for each input
+#  (maybe convergence result can be adjusted for this)
 train_encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration,
                                                        input_encoding_rate, input_encoding_inactive_rate,
                                                        delay, dt)
@@ -136,7 +137,6 @@ pattern_order = torch.tensor([0, 1, 2])
 train_pattern_order = pattern_order.repeat(train_repeats)
 test_pattern_order = pattern_order.repeat(test_repeats)
 
-
 train_data = data.repeat(train_repeats, duplications)  # data.repeat(2000, 3)
 test_data = data.repeat(test_repeats, duplications)
 input_spikes = train_encoder(train_data)
@@ -144,7 +144,6 @@ input_spikes = train_encoder(train_data)
 train_time_ranges = train_encoder.get_time_ranges_for_patterns(train_pattern_order)
 test_time_ranges = test_encoder.get_time_ranges_for_patterns(test_pattern_order)
 test_time_ranges_ungrouped = test_encoder.get_time_ranges(len(test_pattern_order))
-
 
 weight_init = 1  # np.log(1./input_neurons) + np.log(1)  # todo
 bias_init = 2  # np.log(1./output_neurons)
@@ -183,7 +182,8 @@ model.state_metric.plot()
 # plt.show()
 
 group_colors = ("tab:orange", "tab:green", "tab:blue")
-allowed_colors = [[idx,] for idx in neuron_mapping]  # todo: find these by finding the correct output neuron for each pattern
+allowed_colors = [[idx, ] for idx in
+                  neuron_mapping]  # todo: find these by finding the correct output neuron for each pattern
 
 # Plot inputs
 plt.figure(figsize=(10, 7))
@@ -219,15 +219,17 @@ plt.show()
 print(model.linear.weight)
 print(model.linear.bias)
 
-
 preds = get_predictions(output_spikes, test_time_ranges_ungrouped, neuron_mapping)
+# todo: test if below crashes on missing predictions
 acc = torchmetrics.functional.accuracy(torch.tensor(preds), test_pattern_order, task="multiclass", num_classes=3)
 print(acc)
 
 stdp_module.learning_rates_tracker.plot()
 
-# todo: improve plots above (colour spikes based on group (separate them appropriately) + whether correctly predicted)
-# todo: plots of relative rates for each neuron based on input
+# todo: add tracker for weights / biases
 # todo: plots of bias convergence to log probabilities (use differently sized signals)
 
 # todo: investigate resistance to overlapping patterns and requirement for sparseness
+
+# todo: add background oscillations
+# todo: add avg data log likelihood & conditional crossentropy measures over time
