@@ -131,3 +131,53 @@ class LearningRatesTracker(metric.Metric):
         plt.yscale('log')
         plt.legend()
         plt.show()
+
+
+class WeightsTracker(metric.Metric):
+    """Collects the weights and biases of a layer over time."""
+
+    def __init__(self, is_active=True, dist_sync_on_step=False):
+        super().__init__(dist_sync_on_step=dist_sync_on_step)
+
+        self.is_active = is_active
+        self.add_state("weights_history", default=[], dist_reduce_fx="cat")
+        self.add_state("bias_history", default=[], dist_reduce_fx="cat")
+
+    def update(self, weights, biases):
+        if not self.is_active:
+            return
+
+        self.weights_history.append(weights)
+        self.bias_history.append(biases)
+
+    def compute(self):
+        return torch.stack(self.weights_history), torch.stack(self.bias_history)
+
+    def plot_biases_exp(self):
+        weights_history, bias_history = self.compute()
+
+        bias_exp = torch.exp(bias_history)
+
+        for i in range(bias_exp.shape[-1]):
+            plt.plot(bias_exp[:, i], label=f'bias {i}')
+        plt.legend()
+        plt.show()
+
+
+
+class NormalizedConditionalEntropy(metric.Metric):
+    """Collects the normalized conditional entropy of a layer over time."""
+
+    def __init__(self, dist_sync_on_step=False):
+        super().__init__(dist_sync_on_step=dist_sync_on_step)
+
+        # todo
+
+    def update(self, normalized_conditional_entropy):
+        # todo
+
+    def compute(self):
+        # todo
+
+    def plot(self):
+        # todo
