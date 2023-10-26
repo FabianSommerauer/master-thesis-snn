@@ -58,7 +58,12 @@ def get_predictions(output_spikes, time_ranges, pattern_mapping):
 
 
 def get_joint_probabilities_over_time(output_spikes, time_ranges_per_pattern):
-    """Get joint probabilities of output neuron firing and pattern presentation over time"""
+    """Get joint probabilities of output neuron firing and pattern presentation over time
+
+    Args:
+        output_spikes: output spikes [shape (time, neuron)]
+        time_ranges_per_pattern: time ranges for each pattern [shape (pattern, time_range, 2)] todo: currently this is just a list of lists
+    """
 
     total_time = output_spikes.shape[0]
     output_neuron_num = output_spikes.shape[-1]
@@ -85,6 +90,35 @@ def get_joint_probabilities_over_time(output_spikes, time_ranges_per_pattern):
     probabilities = cumulative_counts / totals
 
     return probabilities
+
+
+# todo: check if this works correctly
+def get_joint_probabilities_over_time_for_rates(relative_firing_rates, time_ranges_per_pattern):
+    """Get joint probabilities of output neuron firing and pattern presentation over time
+
+    Args:
+        relative_firing_rates: relative firing rates [shape (time, neuron)]
+        time_ranges_per_pattern: time ranges for each pattern [shape (pattern, time_range, 2)] todo: currently this is just a list of lists
+    """
+
+    total_time = relative_firing_rates.shape[0]
+    output_neuron_num = relative_firing_rates.shape[-1]
+    pattern_num = len(time_ranges_per_pattern)
+
+    joint_probabilities_over_time = np.zeros((total_time, pattern_num, output_neuron_num))
+
+    potential_spike_times = np.arange(total_time)
+
+    for pattern_idx, time_ranges in enumerate(time_ranges_per_pattern):
+        time_range = np.stack(time_ranges, axis=0)
+        in_range = np.any(
+            (potential_spike_times[:, None] <= time_range[:, 1]) & (potential_spike_times[:, None] >= time_range[:, 0]),
+            axis=-1)
+
+        joint_probabilities_over_time[time_range[in_range], pattern_idx, :] = relative_firing_rates[
+                                                                              time_range[in_range], :]
+
+    return joint_probabilities_over_time
 
 
 # ensure documentation mentions shapes of numpy arguments
@@ -141,3 +175,47 @@ def normalized_conditional_cross_entropy(joint_probabilities):
     normalized_cond_cross_entropy = conditional_cross_entropy / pattern_cross_entropy
 
     return normalized_cond_cross_entropy
+
+
+def grouped_sum(array, groups):
+    """Sum values in array based on group indices keeping the initial shape of the array
+
+    Args:
+        array: array to sum [shape arbitrary]
+        groups: group indices [shape same as array]
+    """
+
+    grouped_sums = np.zeros(array.shape)
+
+    unique_indices = np.unique(groups)
+
+    for idx in unique_indices:
+        mask = groups == idx
+        grouped_sums[mask] = np.sum(array[mask])
+
+    return grouped_sums
+
+
+def get_input_likelihood(weights, biases, input_psp, input_groups, c=1.):
+    """Compute log likelihood of input spikes given weights and biases (as weights and biases represent a learned distribution)
+
+    Args:
+        weights: weights of linear layer [shape (neuron, input)]
+        biases: biases of linear layer [shape (neuron,)]
+        input_psp: input psp; values assumed to be 0 or 1; should be grouped with each group always having exactly 1 active neuron) [shape (..., input)]
+        input_groups: group idx of each input (used to appropriately normalize weights) [shape (input,)]
+        c: constant used to during learning (default: 1.)
+    """
+
+    priors = np.exp(biases)
+    normalized_priors = priors / np.sum(priors, axis=-1, keepdims=True)
+
+    single_input_likelihoods = np.exp(weights) / c
+    group_normalized_single_input_log_likelihoods = np.log(single_input_likelihoods
+                                                           / grouped_sum(single_input_likelihoods, input_groups))
+
+    input_log_likelihoods = np.sum(input_psp[..., None, :] * group_normalized_single_input_log_likelihoods[None, :, :], axis=-1)
+
+    total_input_likelihood = np.sum(np.exp(input_log_likelihoods) * normalized_priors, axis=-1)
+
+    return total_input_likelihood
