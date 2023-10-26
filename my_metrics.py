@@ -162,22 +162,3 @@ class WeightsTracker(metric.Metric):
             plt.plot(bias_exp[:, i], label=f'bias {i}')
         plt.legend()
         plt.show()
-
-
-
-class NormalizedConditionalEntropy(metric.Metric):
-    """Collects the normalized conditional entropy of a layer over time."""
-
-    def __init__(self, dist_sync_on_step=False):
-        super().__init__(dist_sync_on_step=dist_sync_on_step)
-
-        # todo
-
-    def update(self, normalized_conditional_entropy):
-        # todo
-
-    def compute(self):
-        # todo
-
-    def plot(self):
-        # todo
