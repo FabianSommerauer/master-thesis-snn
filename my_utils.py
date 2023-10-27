@@ -202,10 +202,12 @@ def get_input_likelihood(weights, biases, input_psp, input_groups, c=1.):
     Args:
         weights: weights of linear layer [shape (neuron, input)]
         biases: biases of linear layer [shape (neuron,)]
-        input_psp: input psp; values assumed to be 0 or 1; should be grouped with each group always having exactly 1 active neuron) [shape (..., input)]
+        input_psp: input psp; values assumed to be 0 or 1; should be grouped with each group always having exactly 1 active neuron [shape (..., input)]
         input_groups: group idx of each input (used to appropriately normalize weights) [shape (input,)]
         c: constant used to during learning (default: 1.)
     """
+
+    # todo: deal with input_psps where multiple neurons in each group may be active at once
 
     priors = np.exp(biases)
     normalized_priors = priors / np.sum(priors, axis=-1, keepdims=True)

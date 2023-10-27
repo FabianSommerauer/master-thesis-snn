@@ -38,7 +38,7 @@ mnist_test = datasets.MNIST(data_path, train=False, download=True, transform=tra
 train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=True)
 test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=True)
 
-# TODO: filter data to subset of classes or subset of samples per class
+# filter data to subset of classes or subset of samples per class
 
 
 # Model config
@@ -54,8 +54,8 @@ presentation_duration = 0.04
 delay = 0.01
 
 # todo: experiment with different rates (maybe different rates for train and test as well)
-input_encoding_rate = 100
-input_encoding_inactive_rate = 10
+input_encoding_rate = 40
+input_encoding_inactive_rate = 5
 
 
 # Model setup
