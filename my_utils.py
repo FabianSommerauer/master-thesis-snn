@@ -115,13 +115,12 @@ def get_joint_probabilities_over_time_for_rates(relative_firing_rates, time_rang
             (potential_spike_times[:, None] <= time_range[:, 1]) & (potential_spike_times[:, None] >= time_range[:, 0]),
             axis=-1)
 
-        joint_probabilities_over_time[time_range[in_range], pattern_idx, :] = relative_firing_rates[
-                                                                              time_range[in_range], :]
+        joint_probabilities_over_time[potential_spike_times[in_range], pattern_idx, :] = relative_firing_rates[
+                                                                              potential_spike_times[in_range], :]
 
     return joint_probabilities_over_time
 
 
-# ensure documentation mentions shapes of numpy arguments
 
 def normalized_conditional_cross_entropy_paper(joint_probabilities):
     """Compute normalized conditional cross entropy H(k|Z) / H(k,Z) based on joint probabilities
@@ -132,16 +131,15 @@ def normalized_conditional_cross_entropy_paper(joint_probabilities):
         joint_probabilities: joint probabilities of pattern presentation and output neuron firing [shape (time, pattern, neuron) or (pattern, neuron)]
     """
 
-    # compute conditional probabilities
-    conditional_probabilities = joint_probabilities / np.sum(joint_probabilities, axis=-1, keepdims=True)
+    # todo: deal with zeros
 
-    # avoid division by zero (assume "worst case" where no pattern is presented)
-    conditional_probabilities[conditional_probabilities == 0] = 1.  # todo: check if this is correct
+    # compute conditional probabilities
+    conditional_probabilities = joint_probabilities / np.sum(joint_probabilities, axis=-2, keepdims=True)
 
     # compute cross entropy
-    cross_entropy = -np.sum(np.sum(joint_probabilities * np.log(joint_probabilities), axis=-1), axis=-2)
+    cross_entropy = -np.sum(np.sum(joint_probabilities * np.log(joint_probabilities), axis=-1), axis=-1)
     conditional_cross_entropy = -np.sum(np.sum(joint_probabilities * np.log(conditional_probabilities), axis=-1),
-                                        axis=-2)
+                                        axis=-1)
 
     # normalize
     normalized_cond_cross_entropy = conditional_cross_entropy / cross_entropy
@@ -158,11 +156,10 @@ def normalized_conditional_cross_entropy(joint_probabilities):
         joint_probabilities: joint probabilities of pattern presentation and output neuron firing [shape (time, pattern, neuron) or (pattern, neuron)]
     """
 
-    # compute conditional probabilities
-    conditional_probabilities = joint_probabilities / np.sum(joint_probabilities, axis=-1, keepdims=True)
+    # todo: deal with zeros
 
-    # avoid division by zero (assume "worst case" where no pattern is presented)
-    conditional_probabilities[conditional_probabilities == 0] = 1.  # todo: check if this is correct
+    # compute conditional probabilities
+    conditional_probabilities = joint_probabilities / np.sum(joint_probabilities, axis=-2, keepdims=True)
 
     pattern_probabilities = np.sum(joint_probabilities, axis=-1)
 
@@ -207,7 +204,7 @@ def get_input_likelihood(weights, biases, input_psp, input_groups, c=1.):
         c: constant used to during learning (default: 1.)
     """
 
-    # todo: deal with input_psps where multiple neurons in each group may be active at once
+    # todo: deal with input_psps where multiple neurons in each group may be active at once and which aren't binary
 
     priors = np.exp(biases)
     normalized_priors = priors / np.sum(priors, axis=-1, keepdims=True)
@@ -221,3 +218,12 @@ def get_input_likelihood(weights, biases, input_psp, input_groups, c=1.):
     total_input_likelihood = np.sum(np.exp(input_log_likelihoods) * normalized_priors, axis=-1)
 
     return total_input_likelihood
+
+
+
+#todo
+# joint = get_joint_probabilities_over_time_for_rates(probs, train_time_ranges)
+# plt.plot(normalized_conditional_cross_entropy(moving_avg(joint, 500, 0)))
+def moving_avg(arr, len, axis):
+    filt = np.ones(len) / len
+    return np.apply_along_axis(lambda m: np.convolve(m, filt, mode='valid'), axis=axis, arr=arr)

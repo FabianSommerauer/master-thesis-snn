@@ -19,7 +19,7 @@ _ = torch.manual_seed(seed)
 np.random.seed(seed)
 
 # Data config
-batch_size = 128
+batch_size = 10
 data_path = '/tmp/data/mnist'
 
 # Data transforms

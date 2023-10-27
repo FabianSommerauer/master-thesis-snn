@@ -6,7 +6,8 @@ import torchmetrics
 
 import custom_stdp
 from my_spike_modules import *
-from my_utils import spike_in_range, get_neuron_pattern_mapping, get_predictions
+from my_utils import spike_in_range, get_neuron_pattern_mapping, get_predictions, get_joint_probabilities_over_time, \
+    normalized_conditional_cross_entropy
 from my_plot_utils import raster_plot, raster_plot_multi_color, raster_plot_multi_color_per_train
 
 batch_size = 128
@@ -117,8 +118,7 @@ stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1, base_mu=1, ba
 
 inhibition_process = OUInhibitionProcess(inhibition_increase=3000, inhibition_rest=0, inhibition_tau=0.005,
                                          noise_rest=0, noise_tau=0.005, noise_sigma=50, dt=dt)
-output_cell = StochasticOutputNeuronCell(
-    inhibition_process=inhibition_process, dt=dt)
+output_cell = StochasticOutputNeuronCell(inhibition_process=inhibition_process, dt=dt, collect_rates=True)
 
 model = BayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, dt),
                           output_neuron_cell=output_cell,
@@ -149,12 +149,22 @@ weight_init = 1  # np.log(1./input_neurons) + np.log(1)  # todo
 bias_init = 2  # np.log(1./output_neurons)
 model.linear.weight.data.fill_(weight_init)
 model.linear.bias.data.fill_(bias_init)
-_, _ = model(input_spikes, train=True)
+output_spikes, _ = model(input_spikes, train=True)
 
 # todo: check what is actually saved here
 # torch.save(model.state_dict(), "trained_bayesian_stdp_model.pth")
 
 # model.load_state_dict(torch.load("trained_bayesian_stdp_model.pth"))
+
+joint_probs = get_joint_probabilities_over_time(output_spikes, train_time_ranges)
+cond_cross_entropy = normalized_conditional_cross_entropy(joint_probs)
+
+plt.plot(cond_cross_entropy)
+
+plt.title('Training')
+plt.xlabel('Time Step')
+plt.ylabel('Normalized Conditional Crossentropy')
+plt.show()
 
 
 output_cell.rate_tracker.is_active = True
