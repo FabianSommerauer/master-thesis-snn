@@ -47,18 +47,19 @@ class SpikePopulationGroupBatchToTimeEncoder(nn.Module):
         combined = rearrange(padded, 't b ... i n -> (b t) ... (i n)')
         return combined
 
-    def get_time_ranges(self, pattern_count, epsilon=1e-5):
+    def get_time_ranges(self, pattern_count, epsilon=1e-5, offset=0):
         total_len = self.base_encoder.seq_length + self.delay_shift
         # todo: check with epsilon
-        time_ranges = [(i * total_len - epsilon, i * total_len + total_len - epsilon)
+        time_ranges = [((i+offset) * total_len - epsilon, (i+offset) * total_len + total_len - epsilon)
                        for i in range(pattern_count)]
 
         return time_ranges
 
-    def get_time_ranges_for_patterns(self, pattern_order, epsilon=1e-5):
-        time_ranges = self.get_time_ranges(len(pattern_order), epsilon)
+    def get_time_ranges_for_patterns(self, pattern_order, distinct_pattern_count=None, epsilon=1e-5, offset=0):
+        time_ranges = self.get_time_ranges(len(pattern_order), epsilon, offset)
 
-        distinct_pattern_count = len(np.unique(pattern_order))
+        if distinct_pattern_count is None:
+            distinct_pattern_count = len(np.unique(pattern_order))
         grouped_time_ranges = [[] for _ in range(distinct_pattern_count)]
         for index, time_range in zip(pattern_order, time_ranges):
             grouped_time_ranges[index].append(time_range)
@@ -151,10 +152,10 @@ class StochasticOutputNeuronCell(nn.Module):
         inhibition, noise = inhibition_state
 
         log_rates = inputs - inhibition + noise
-        input_rates = torch.exp(inputs)
+        relative_input_rates = torch.exp(inputs - torch.logsumexp(inputs, dim=-1, keepdim=True))
 
         # collect rates for plotting
-        self.rate_tracker.update(input_rates, log_rates)
+        self.rate_tracker.update(relative_input_rates, log_rates)
 
         # more numerically stable to utilize log
         log_total_rate = torch.logsumexp(log_rates, -1, keepdim=True)
@@ -169,10 +170,10 @@ class StochasticOutputNeuronCell(nn.Module):
 
         # here we only have to deal with input_rates as inhibition + noise cancels out
         # (makes process more numerically stable)
-        rel_probs = input_rates / torch.sum(input_rates, dim=-1, keepdim=True)
-        spike_location = efficient_multinomial(rel_probs)
+        # rel_probs = input_rates / torch.sum(input_rates, dim=-1, keepdim=True)  (should already be normalized due to logsumexp)
+        spike_location = efficient_multinomial(relative_input_rates)
 
-        out_spike_locations = F.one_hot(spike_location, num_classes=input_rates.shape[-1])
+        out_spike_locations = F.one_hot(spike_location, num_classes=relative_input_rates.shape[-1])
 
         # ensures that only one output neuron can fire at a time
         out_spikes = (out_spike_locations * spike_occurred).to(dtype=inputs.dtype)

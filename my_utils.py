@@ -74,6 +74,8 @@ def get_joint_probabilities_over_time(output_spikes, time_ranges_per_pattern):
     spike_times = np.where(output_spikes > 0)
 
     for pattern_idx, time_ranges in enumerate(time_ranges_per_pattern):
+        if len(time_ranges) == 0:
+            continue
         time_range = np.stack(time_ranges, axis=0)
         in_range = np.any((spike_times[0][:, None] <= time_range[:, 1]) & (spike_times[0][:, None] >= time_range[:, 0]),
                           axis=-1)
@@ -116,10 +118,10 @@ def get_joint_probabilities_over_time_for_rates(relative_firing_rates, time_rang
             axis=-1)
 
         joint_probabilities_over_time[potential_spike_times[in_range], pattern_idx, :] = relative_firing_rates[
-                                                                              potential_spike_times[in_range], :]
+                                                                                         potential_spike_times[
+                                                                                             in_range], :]
 
     return joint_probabilities_over_time
-
 
 
 def normalized_conditional_cross_entropy_paper(joint_probabilities):
@@ -213,15 +215,15 @@ def get_input_likelihood(weights, biases, input_psp, input_groups, c=1.):
     group_normalized_single_input_log_likelihoods = np.log(single_input_likelihoods
                                                            / grouped_sum(single_input_likelihoods, input_groups))
 
-    input_log_likelihoods = np.sum(input_psp[..., None, :] * group_normalized_single_input_log_likelihoods[None, :, :], axis=-1)
+    input_log_likelihoods = np.sum(input_psp[..., None, :] * group_normalized_single_input_log_likelihoods[None, :, :],
+                                   axis=-1)
 
     total_input_likelihood = np.sum(np.exp(input_log_likelihoods) * normalized_priors, axis=-1)
 
     return total_input_likelihood
 
 
-
-#todo
+# todo
 # joint = get_joint_probabilities_over_time_for_rates(probs, train_time_ranges)
 # plt.plot(normalized_conditional_cross_entropy(moving_avg(joint, 500, 0)))
 def moving_avg(arr, len, axis):
