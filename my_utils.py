@@ -57,12 +57,13 @@ def get_predictions(output_spikes, time_ranges, pattern_mapping):
     return predictions
 
 
-def get_joint_probabilities_over_time(output_spikes, time_ranges_per_pattern):
-    """Get joint probabilities of output neuron firing and pattern presentation over time
+def get_cumulative_counts_over_time(output_spikes, time_ranges_per_pattern, base_counts=None):
+    """Get cumulative counts of output neuron firing over time
 
     Args:
         output_spikes: output spikes [shape (time, neuron)]
         time_ranges_per_pattern: time ranges for each pattern [shape (pattern, time_range, 2)] todo: currently this is just a list of lists
+        base_counts: base counts to add to the counts for each pattern [shape (pattern, neuron)]
     """
 
     total_time = output_spikes.shape[0]
@@ -84,13 +85,41 @@ def get_joint_probabilities_over_time(output_spikes, time_ranges_per_pattern):
 
     cumulative_counts = np.cumsum(counts_over_time, axis=0)
 
+    if base_counts is not None:
+        cumulative_counts += base_counts
+
+    return cumulative_counts
+
+
+def get_joint_probabilities_from_counts(counts):
+    """Get joint probabilities of output neuron firing and pattern presentation from counts
+
+    Args:
+        counts: counts of output neuron firing and pattern presentation [shape (time, pattern, neuron)]
+    """
+
     # avoid division by zero (assume "worst case" where no pattern is presented)
-    cumulative_counts[cumulative_counts == 0] = 1.
+    counts_cp = counts.copy()
+    counts_cp[counts_cp == 0] = 1.
 
-    totals = np.sum(np.sum(cumulative_counts, axis=-1, keepdims=True), axis=-2, keepdims=True)
+    totals = np.sum(np.sum(counts_cp, axis=-1, keepdims=True), axis=-2, keepdims=True)
 
-    probabilities = cumulative_counts / totals
+    probabilities = counts_cp / totals
 
+    return probabilities
+
+
+def get_joint_probabilities_over_time(output_spikes, time_ranges_per_pattern, base_counts=None):
+    """Get joint probabilities of output neuron firing and pattern presentation over time
+
+    Args:
+        output_spikes: output spikes [shape (time, neuron)]
+        time_ranges_per_pattern: time ranges for each pattern [shape (pattern, time_range, 2)] todo: currently this is just a list of lists
+        base_counts: base counts to add to the counts for each pattern [shape (pattern, neuron)]
+    """
+
+    cumulative_counts = get_cumulative_counts_over_time(output_spikes, time_ranges_per_pattern, base_counts)
+    probabilities = get_joint_probabilities_from_counts(cumulative_counts)
     return probabilities
 
 

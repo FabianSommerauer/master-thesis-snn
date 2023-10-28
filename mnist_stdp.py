@@ -8,8 +8,12 @@ import torchmetrics
 import custom_stdp
 from my_spike_modules import *
 from my_utils import spike_in_range, get_neuron_pattern_mapping, get_predictions, get_joint_probabilities_over_time, \
-    normalized_conditional_cross_entropy, normalized_conditional_cross_entropy_paper
+    normalized_conditional_cross_entropy, normalized_conditional_cross_entropy_paper, get_cumulative_counts_over_time, \
+    get_joint_probabilities_from_counts
 from my_plot_utils import raster_plot, raster_plot_multi_color, raster_plot_multi_color_per_train
+from my_timing_utils import Timer
+
+torch.set_grad_enabled(False)
 
 # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
@@ -23,12 +27,14 @@ np.random.seed(seed)
 batch_size = 10
 data_path = '/tmp/data/mnist'
 
+
 class ToBinaryTransform(object):
     def __init__(self, thresh):
         self.thresh = thresh
 
     def __call__(self, data: Tensor):
         return (data > self.thresh).to(data.dtype)
+
 
 # Data transforms
 transform = transforms.Compose([
@@ -47,7 +53,6 @@ train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=True)
 test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=True)
 
 distinct_targets = mnist_train.targets.unique().cpu().numpy()
-
 
 # Model config
 _, width, height = mnist_train.data.shape
@@ -74,23 +79,31 @@ test_encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration,
                                                       input_encoding_rate, input_encoding_inactive_rate,
                                                       delay, dt)
 
-stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1, base_mu=0.5, base_mu_bias=0.1, collect_history=True)
+stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1, base_mu=1, base_mu_bias=0.5, collect_history=True)
 # stdp_module = custom_stdp.BayesianSTDPAdaptive(input_neurons, output_neurons, c=1, collect_history=True)  #todo: get this to work
 
-inhibition_process = OUInhibitionProcess(inhibition_increase=3000, inhibition_rest=0, inhibition_tau=0.005,
-                                         noise_rest=0, noise_tau=0.005, noise_sigma=50, dt=dt)
-output_cell = StochasticOutputNeuronCell(inhibition_process=inhibition_process, dt=dt, collect_rates=True)
+# inhibition_process = OUInhibitionProcess(inhibition_increase=200, inhibition_rest=0, inhibition_tau=0.005,
+#                                          noise_rest=0, noise_tau=0.005, noise_sigma=50, dt=dt)
+# output_cell = StochasticOutputNeuronCell(inhibition_process=inhibition_process, dt=dt, collect_rates=True)
+#
+# model = BayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, dt),
+#                           output_neuron_cell=output_cell,
+#                           stdp_module=stdp_module, acc_states=False)
 
-model = BayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, dt),
-                          output_neuron_cell=output_cell,
-                          stdp_module=stdp_module, acc_states=False)
+output_cell = EfficientStochasticOutputNeuronCell(inhibition_args=InhibitionArgs(200, 0, 0.005),
+                                                  noise_args=NoiseArgs(0, 0.005, 50),
+                                                  dt=dt, collect_rates=False)
+
+model = EfficientBayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, dt),
+                                   multi_step_output_neuron_cell=output_cell,
+                                   stdp_module=stdp_module, acc_states=False)
 
 # Model initialization
 # todo: experiment with different initializations
-#weight_init = 1
-#bias_init = 2
-#model.linear.weight.data.fill_(weight_init)
-#model.linear.bias.data.fill_(bias_init)
+# weight_init = 1
+# bias_init = 2
+# model.linear.weight.data.fill_(weight_init)
+# model.linear.bias.data.fill_(bias_init)
 
 # Training config
 num_epochs = 1  # run for 1 epoch - each data sample is seen only once
@@ -101,7 +114,7 @@ acc_hist = []  # record accuracy over iterations
 state = None
 total_train_output_spikes = []
 total_time_ranges = [[] for _ in range(distinct_targets.shape[0])]
-joint_probs_hist = []  # todo: might not be needed
+cumulative_counts_hist = []  # todo: might not need this
 cross_entropy_hist = []
 cross_entropy_paper_hist = []
 
@@ -109,36 +122,48 @@ cross_entropy_paper_hist = []
 offset = 0
 for epoch in range(num_epochs):
     for i, (data, targets) in enumerate(iter(train_loader)):
-        data = rearrange(data, 'b c w h -> b (c w h)')
-        input_spikes = train_encoder(data)
+        with Timer('training loop'):
+            data = rearrange(data, 'b c w h -> b (c w h)')
+            input_spikes = train_encoder(data)
 
-        time_ranges = train_encoder.get_time_ranges_for_patterns(targets,
-                                                                 distinct_pattern_count=distinct_targets.shape[0],
-                                                                 offset=offset)
-        time_ranges_ungrouped = test_encoder.get_time_ranges(targets.shape[0], offset=offset)
+            time_ranges = train_encoder.get_time_ranges_for_patterns(targets,
+                                                                     distinct_pattern_count=distinct_targets.shape[0])
+                                                                     #offset=offset)
+            time_ranges_ungrouped = test_encoder.get_time_ranges(targets.shape[0], offset=offset)
 
-        output_spikes, state = model(input_spikes, state=state, train=True)
+            output_spikes, state = model(input_spikes, state=state, train=True)
 
-        output_spikes_np = output_spikes.cpu().numpy()
+            with Timer('metric_processing'):
+                output_spikes_np = output_spikes.cpu().numpy()
 
-        total_train_output_spikes.extend(output_spikes_np)
-        for idx, time_range in enumerate(time_ranges):
-            total_time_ranges[idx].extend(time_range)
+                # total_train_output_spikes.extend(output_spikes_np)
+                # for idx, time_range in enumerate(time_ranges):
+                #     total_time_ranges[idx].extend(time_range)
+                with Timer('cumulative_counts'):
+                    cumulative_counts = get_cumulative_counts_over_time(np.array(output_spikes_np),
+                                                                        time_ranges,
+                                                                        base_counts=None if i == 0 else
+                                                                        cumulative_counts[-1])
+                    # cumulative_counts_hist.extend(cumulative_counts)
 
-        joint_probs = get_joint_probabilities_over_time(np.array(total_train_output_spikes), total_time_ranges)
-        joint_probs_hist = joint_probs
 
-        cond_cross_entropy = normalized_conditional_cross_entropy(joint_probs)
-        cross_entropy_hist = cond_cross_entropy
+                offset += data.shape[0]
 
-        cond_cross_entropy_paper = normalized_conditional_cross_entropy_paper(joint_probs)
-        cross_entropy_paper_hist = cond_cross_entropy_paper
+                with Timer('metric_printing'):
+                    if i % 10 == 0:
+                        with Timer('cross_entropy'):
+                            joint_probs = get_joint_probabilities_from_counts(cumulative_counts[-1])
 
-        offset += data.shape[0]
+                            cond_cross_entropy = normalized_conditional_cross_entropy(joint_probs)
+                            # cross_entropy_hist.extend(cond_cross_entropy)
 
-        if i % 10 == 0:
-            print(f"Epoch {epoch}, Iteration {i} \nTrain Loss: {cond_cross_entropy[-1]:.2f}")
+                            cond_cross_entropy_paper = normalized_conditional_cross_entropy_paper(joint_probs)
+                            # cross_entropy_paper_hist.extend(cond_cross_entropy_paper)
 
+                        print(f"Epoch {epoch}, Iteration {i} \n"
+                              f"Train Loss: {cond_cross_entropy:.4f}; Paper Loss: {cond_cross_entropy_paper:.4f}")
+
+Timer.print()
 
 torch.save(model.state_dict(), "trained_mnist_bayesian_stdp_model.pth")
 
@@ -146,7 +171,6 @@ torch.save(model.state_dict(), "trained_mnist_bayesian_stdp_model.pth")
 
 
 neuron_mapping = get_neuron_pattern_mapping(total_train_output_spikes, total_time_ranges)
-
 
 output_cell.rate_tracker.is_active = True
 output_cell.rate_tracker.reset()
@@ -160,7 +184,8 @@ for i, (data, targets) in enumerate(iter(test_loader)):
     input_spikes = test_encoder(data)
 
     targets_np = targets.cpu().numpy()
-    time_ranges = test_encoder.get_time_ranges_for_patterns(targets_np, distinct_pattern_count=distinct_targets.shape[0])
+    time_ranges = test_encoder.get_time_ranges_for_patterns(targets_np,
+                                                            distinct_pattern_count=distinct_targets.shape[0])
     time_ranges_ungrouped = test_encoder.get_time_ranges(targets_np.shape[0])
 
     # todo: we reset the state for every batch here, should we?
@@ -171,7 +196,6 @@ for i, (data, targets) in enumerate(iter(test_loader)):
 
 print(f"Test Accuracy: {total_acc / len(test_loader) * 100:.4f}%")
 
-
 # TODO: detailed evaluation; plot weights; plot bias; plot firing rates; plot stdp; plot log probabilities; plot conditional crossentropy;
 # TODO: plot accuracy over training based on final pattern mapping
 
@@ -181,7 +205,7 @@ plt.title('Training')
 plt.xlabel('Time Step')
 plt.ylabel('Normalized Conditional Crossentropy')
 plt.ylim([0, 1])
-plt.xticks(np.arange(0, len(cross_entropy_hist), 100./dt),
+plt.xticks(np.arange(0, len(cross_entropy_hist), 100. / dt),
            [str(x) + 's' for x in np.arange(0, len(cross_entropy_hist) * dt, 100)])
 plt.show()
 
@@ -224,7 +248,6 @@ plt.show()
 
 print(model.linear.weight)
 print(model.linear.bias)
-
 
 stdp_module.learning_rates_tracker.plot()
 

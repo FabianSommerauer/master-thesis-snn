@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 import norse.torch as norse
 import numpy as np
 import torch
@@ -6,6 +8,7 @@ import torch.nn.functional as F
 from einops import rearrange
 from torch import Tensor
 from my_metrics import SpikeRateTracker, InhibitionStateTracker
+from my_timing_utils import measure_time, Timer
 
 
 # todo: check whether torch.no_grad() or detach() is needed in classes below
@@ -35,6 +38,7 @@ class SpikePopulationGroupBatchToTimeEncoder(nn.Module):
         self.base_encoder = SpikePopulationGroupEncoder(seq_length, active_rate, inactive_rate, dt)
         self.delay_shift = int(delay / dt)
 
+    @measure_time
     def forward(self, input_values: Tensor) -> Tensor:
         # shape (time, batch, input_values, neurons_per_input = 2)
         encoded = self.base_encoder(input_values)
@@ -47,14 +51,16 @@ class SpikePopulationGroupBatchToTimeEncoder(nn.Module):
         combined = rearrange(padded, 't b ... i n -> (b t) ... (i n)')
         return combined
 
+    @measure_time
     def get_time_ranges(self, pattern_count, epsilon=1e-5, offset=0):
         total_len = self.base_encoder.seq_length + self.delay_shift
         # todo: check with epsilon
-        time_ranges = [((i+offset) * total_len - epsilon, (i+offset) * total_len + total_len - epsilon)
+        time_ranges = [((i + offset) * total_len - epsilon, (i + offset) * total_len + total_len - epsilon)
                        for i in range(pattern_count)]
 
         return time_ranges
 
+    @measure_time
     def get_time_ranges_for_patterns(self, pattern_order, distinct_pattern_count=None, epsilon=1e-5, offset=0):
         time_ranges = self.get_time_ranges(len(pattern_order), epsilon, offset)
 
@@ -72,6 +78,7 @@ class BinaryTimedPSP(nn.Module):
         super().__init__()
         self.duration = int(sigma / dt)
 
+    @measure_time
     def forward(self, input_spikes: Tensor) -> Tensor:
         with torch.no_grad():
             convolvable_spikes = rearrange(input_spikes, 't ... -> ... 1 t')
@@ -85,6 +92,28 @@ class BinaryTimedPSP(nn.Module):
             psp = torch.clip(psp_sum, 0, 1)[..., :-(self.duration - 1)]
 
             return rearrange(psp, '... 1 t -> t ...')
+
+
+def filter_response_over_time(data: Tensor, filter: Tensor):
+    """Convolves over time dimension (first dimension) with given filter (in reverse order).
+    Ensures that output is properly aligned in time.
+
+    Args:
+        data: shape (time, ...)
+        filter: shape (filter_size)
+    """
+    shape = data.shape
+
+    reversed_filter = torch.flip(filter, dims=(-1,))
+
+    compacted_data = torch.reshape(data, (data.shape[0], -1))
+    convolvable_data = rearrange(compacted_data, 't r -> r 1 t')
+    convolved = torch.nn.functional.conv1d(convolvable_data,
+                                           reversed_filter[None, None, :],
+                                           padding=filter.shape[-1] - 1)
+    relevant_convolved = convolved[..., :-(filter.shape[-1] - 1)]
+    result = rearrange(relevant_convolved, 'r 1 t -> t r')
+    return torch.reshape(result, shape)
 
 
 # todo: if this is just an object it wont be serialized properly (maybe module?)
@@ -107,6 +136,7 @@ class OUInhibitionProcess(object):
         self.noise_decay_factor = np.exp(- dt / noise_tau)
         self.total_noise_sigma = noise_sigma  # todo: * np.sqrt((1. - self.noise_decay_factor ** 2) / 2. * noise_tau)
 
+    @measure_time
     def step(self, spike_occurrences, state=None):
         if state is None:
             inhibition = torch.zeros_like(spike_occurrences) * self.inhibition_rest
@@ -114,17 +144,19 @@ class OUInhibitionProcess(object):
         else:
             inhibition, noise = state
 
-        inhibition = (self.inhibition_rest + (inhibition - self.inhibition_rest) * self.inhibition_decay_factor
-                      + spike_occurrences * self.inhibition_increase)
+        with Timer('inhibition'):
+            inhibition = (self.inhibition_rest + (inhibition - self.inhibition_rest) * self.inhibition_decay_factor
+                          + spike_occurrences * self.inhibition_increase)
 
         # Euler approximation of Ornstein-Uhlenbeck process
         # noise = (1 - self.decay_rate * self.dt) * noise \
         #             + self.decay_sigma * self.dt_sqrt * torch.normal(0, 1, noise.shape)
 
-        # more direct approximation based on
-        # https://github.com/cantaro86/Financial-Models-Numerical-Methods/blob/master/6.1%20Ornstein-Uhlenbeck%20process%20and%20applications.ipynb
-        noise = (self.noise_rest + (noise - self.noise_rest) * self.noise_decay_factor
-                 + self.total_noise_sigma * torch.normal(0, 1, noise.shape))
+        with Timer('noise'):
+            # more direct approximation based on
+            # https://github.com/cantaro86/Financial-Models-Numerical-Methods/blob/master/6.1%20Ornstein-Uhlenbeck%20process%20and%20applications.ipynb
+            noise = (self.noise_rest + (noise - self.noise_rest) * self.noise_decay_factor
+                     + self.total_noise_sigma * torch.normal(0, 1, noise.shape))
 
         return inhibition, noise
 
@@ -144,39 +176,42 @@ class StochasticOutputNeuronCell(nn.Module):
 
         self.rate_tracker = SpikeRateTracker(is_active=collect_rates)
 
+    @measure_time
     def forward(self, inputs, inhibition_state=None):
         if inhibition_state is None:
             no_spike_occurrences = torch.zeros(*inputs.shape[:-1], 1, dtype=inputs.dtype, device=inputs.device)
             inhibition_state = self.inhibition_process.step(no_spike_occurrences)
 
-        inhibition, noise = inhibition_state
+        with Timer('rate_calc'):
+            inhibition, noise = inhibition_state
 
-        log_rates = inputs - inhibition + noise
-        relative_input_rates = torch.exp(inputs - torch.logsumexp(inputs, dim=-1, keepdim=True))
+            log_rates = inputs - inhibition + noise
+            relative_input_rates = torch.exp(inputs - torch.logsumexp(inputs, dim=-1, keepdim=True))
 
-        # collect rates for plotting
-        self.rate_tracker.update(relative_input_rates, log_rates)
+            # # collect rates for plotting
+            # self.rate_tracker.update(relative_input_rates, log_rates)
 
-        # more numerically stable to utilize log
-        log_total_rate = torch.logsumexp(log_rates, -1, keepdim=True)
+            # more numerically stable to utilize log
+            log_total_rate = torch.logsumexp(log_rates, -1, keepdim=True)
 
-        rand_val = torch.rand(
-            *log_total_rate.shape,
-            device=log_total_rate.device,
-        )
+        with Timer('spike_gen'):
+            rand_val = torch.rand(
+                *log_total_rate.shape,
+                device=log_total_rate.device,
+            )
 
-        # check rand_val < total_rate * dt  (within log range)
-        spike_occurred = torch.log(rand_val) < log_total_rate + self.log_dt
+            # check rand_val < total_rate * dt  (within log range)
+            spike_occurred = torch.log(rand_val) < log_total_rate + self.log_dt
 
-        # here we only have to deal with input_rates as inhibition + noise cancels out
-        # (makes process more numerically stable)
-        # rel_probs = input_rates / torch.sum(input_rates, dim=-1, keepdim=True)  (should already be normalized due to logsumexp)
-        spike_location = efficient_multinomial(relative_input_rates)
+            # here we only have to deal with input_rates as inhibition + noise cancels out
+            # (makes process more numerically stable)
+            # rel_probs = input_rates / torch.sum(input_rates, dim=-1, keepdim=True)  (should already be normalized due to logsumexp)
+            spike_location = efficient_multinomial(relative_input_rates)
 
-        out_spike_locations = F.one_hot(spike_location, num_classes=relative_input_rates.shape[-1])
+            out_spike_locations = F.one_hot(spike_location, num_classes=relative_input_rates.shape[-1])
 
-        # ensures that only one output neuron can fire at a time
-        out_spikes = (out_spike_locations * spike_occurred).to(dtype=inputs.dtype)
+            # ensures that only one output neuron can fire at a time
+            out_spikes = (out_spike_locations * spike_occurred).to(dtype=inputs.dtype)
 
         # increase inhibition if a spike occured
         inhibition_state = self.inhibition_process.step(spike_occurred, inhibition_state)
@@ -198,7 +233,8 @@ class BayesianSTDPModel(nn.Module):
 
         self.stdp_module = stdp_module
 
-    def forward(self, input_spikes: Tensor, state=None, train: bool = True) \
+    @measure_time
+    def forward(self, input_spikes: Tensor, state=None, train: bool = True, batched_update: bool = True) \
             -> (Tensor, Tensor):
         with torch.no_grad():
             z_state = state
@@ -215,14 +251,215 @@ class BayesianSTDPModel(nn.Module):
 
                 z_out_acc.append(z_out)
 
-                # collect inhibition/noise states for plotting
-                self.state_metric(z_state)
+                # with Timer('state_metric'):
+                #     # collect inhibition/noise states for plotting
+                #     self.state_metric(z_state)
+                #     pass
+                if train and not batched_update:
+                    with Timer('stdp'):
+                        new_weights, new_biases = self.stdp_module(input_psp, z_out,
+                                                                   self.linear.weight.data,
+                                                                   self.linear.bias.data)
+                        self.linear.weight.data = new_weights
+                        self.linear.bias.data = new_biases
 
-                if train:
-                    new_weights, new_biases = self.stdp_module(input_psp, z_out,
+            z_out_stack = torch.stack(z_out_acc)
+            if train and batched_update:
+                with Timer('stdp'):
+                    new_weights, new_biases = self.stdp_module(input_psps, z_out_stack,
                                                                self.linear.weight.data,
                                                                self.linear.bias.data)
                     self.linear.weight.data = new_weights
                     self.linear.bias.data = new_biases
 
-            return torch.stack(z_out_acc), z_state
+            return z_out_stack, z_state
+
+
+# Efficient implementations of the above classes
+
+class OUInhibitionProcess(object):
+    def __init__(self, inhibition_increase=3000, inhibition_rest=0, inhibition_tau=0.005,
+                 noise_rest=0, noise_tau=0.005, noise_sigma=50, dt=0.001):
+        super(OUInhibitionProcess, self).__init__()
+
+        self.inhibition_increase = inhibition_increase
+        self.inhibition_rest = inhibition_rest
+        # self.inhibition_tau = inhibition_tau
+        self.noise_rest = noise_rest
+        # self.noise_tau = noise_tau
+        # self.noise_sigma = noise_sigma
+
+        self.dt = dt
+        # self.dt_sqrt = np.sqrt(dt)
+
+        self.inhibition_decay_factor = np.exp(- dt / inhibition_tau)
+        self.noise_decay_factor = np.exp(- dt / noise_tau)
+        self.total_noise_sigma = noise_sigma  # todo: * np.sqrt((1. - self.noise_decay_factor ** 2) / 2. * noise_tau)
+
+    @measure_time
+    def step(self, spike_occurrences, state=None):
+        if state is None:
+            inhibition = torch.zeros_like(spike_occurrences) * self.inhibition_rest
+            noise = torch.ones_like(spike_occurrences) * self.noise_rest
+        else:
+            inhibition, noise = state
+
+        with Timer('inhibition'):
+            inhibition = (self.inhibition_rest + (inhibition - self.inhibition_rest) * self.inhibition_decay_factor
+                          + spike_occurrences * self.inhibition_increase)
+
+        # Euler approximation of Ornstein-Uhlenbeck process
+        # noise = (1 - self.decay_rate * self.dt) * noise \
+        #             + self.decay_sigma * self.dt_sqrt * torch.normal(0, 1, noise.shape)
+
+        with Timer('noise'):
+            # more direct approximation based on
+            # https://github.com/cantaro86/Financial-Models-Numerical-Methods/blob/master/6.1%20Ornstein-Uhlenbeck%20process%20and%20applications.ipynb
+            noise = (self.noise_rest + (noise - self.noise_rest) * self.noise_decay_factor
+                     + self.total_noise_sigma * torch.normal(0, 1, noise.shape))
+
+        return inhibition, noise
+
+
+@dataclass
+class InhibitionArgs:
+    inhibition_increase: float
+    inhibition_rest: float
+    inhibition_tau: float
+
+
+@dataclass
+class NoiseArgs:
+    noise_rest: float
+    noise_tau: float
+    noise_sigma: float
+
+
+class EfficientStochasticOutputNeuronCell(nn.Module):
+    def __init__(self, inhibition_args: InhibitionArgs, noise_args: NoiseArgs, dt=0.001, collect_rates=False):
+        super(EfficientStochasticOutputNeuronCell, self).__init__()
+
+        self.inhibition_args = inhibition_args
+        self.noise_args = noise_args
+        self.dt = dt
+        self.log_dt = np.log(dt)
+
+        self.rate_tracker = SpikeRateTracker(is_active=collect_rates)
+
+        max_noise_filter_duration = 10 * self.noise_args.noise_tau
+        self.noise_filter = torch.exp(-torch.arange(0, max_noise_filter_duration, self.dt) / self.noise_args.noise_tau)
+
+        self.inhibition_rest = self.inhibition_args.inhibition_rest
+        self.inhibition_increase = self.inhibition_args.inhibition_increase
+        self.inhibition_factor = np.exp(-self.dt / self.inhibition_args.inhibition_tau)
+
+    @measure_time
+    def forward(self, inputs, state=None):
+        with Timer('inhibition'):
+            noise_base = torch.ones(*inputs.shape[:-1], 1,
+                                    dtype=inputs.dtype, device=inputs.device) * self.noise_args.noise_rest
+            noise_rand = torch.normal(0.0, self.noise_args.noise_sigma, noise_base.shape,
+                                      device=noise_base.device, dtype=noise_base.dtype)
+
+            if state is None:
+                last_inhibition = torch.zeros(1, dtype=inputs.dtype, device=inputs.device)
+            if state is not None:
+                last_inhibition, last_noise = state
+                noise_rand[0] += last_noise
+
+            noise = filter_response_over_time(noise_rand, self.noise_filter)
+
+        with Timer('rate_calc'):
+            log_rates_wo_inhibition = inputs + noise
+            relative_input_rates = torch.exp(inputs - torch.logsumexp(inputs, dim=-1, keepdim=True))
+
+            # # collect rates for plotting
+            # self.rate_tracker.update(relative_input_rates, log_rates)
+
+            # more numerically stable to utilize log
+            # (inhibition is constant so we can pull it out of the logsumexp)
+            log_total_rate_wo_inhibition = torch.logsumexp(log_rates_wo_inhibition, -1, keepdim=True)
+
+        with Timer('spike_loc_gen'):
+            # here we only have to deal with input_rates as inhibition + noise cancels out
+            # (makes process more numerically stable)
+            spike_location = efficient_multinomial(relative_input_rates)
+
+            out_spike_locations = F.one_hot(spike_location, num_classes=relative_input_rates.shape[-1])
+
+        with Timer('spike_gen'):
+            rand_val = torch.rand(
+                *log_total_rate_wo_inhibition.shape,
+                device=log_total_rate_wo_inhibition.device,
+            )
+
+            # would check rand_val < total_rate * dt  (within log range)
+            # however inhibition is not yet determined so we have to use the upper threshold
+            inhibition_upper_threshold = log_total_rate_wo_inhibition + self.log_dt - torch.log(rand_val)
+
+            with Timer('inhibition_calc'):
+                inhibition, spike_occurred = self.get_spike_occurrences_and_inhibition(inhibition_upper_threshold,
+                                                                                       last_inhibition)
+
+            # ensures that only one output neuron can fire at a time
+            out_spikes = (out_spike_locations * spike_occurred).to(dtype=inputs.dtype)
+
+        state = (inhibition[-1], noise[-1])
+
+        return out_spikes, state
+
+    def get_spike_occurrences_and_inhibition(self, inhibition_upper_threshold, last_inhibition):
+        inhibition = torch.zeros(inhibition_upper_threshold.shape[0] + 1,
+                                 dtype=inhibition_upper_threshold.dtype,
+                                 device=inhibition_upper_threshold.device)
+        inhibition[0] = last_inhibition
+        spike_occurred = torch.zeros_like(inhibition_upper_threshold, dtype=torch.bool)
+
+        for ts in range(inhibition_upper_threshold.shape[0]):
+            spike_occurred[ts] = inhibition[ts] < inhibition_upper_threshold[ts]
+            inhibition[ts + 1] = (
+                        self.inhibition_rest + (inhibition[ts] - self.inhibition_rest) * self.inhibition_factor
+                        + spike_occurred[ts] * self.inhibition_increase)
+
+        return inhibition[1:], spike_occurred
+
+
+class EfficientBayesianSTDPModel(nn.Module):
+    """Variant of BayesianSTDPModel that performs STDP updates and inference in a more efficient way.
+        As STDP updates are performed in batches, this might lead to a slight difference in the results.
+    """
+
+    def __init__(self, input_neuron_cnt, output_neuron_cnt,
+                 input_psp, multi_step_output_neuron_cell,
+                 stdp_module,
+                 acc_states=False):
+        super().__init__()
+        self.linear = nn.Linear(input_neuron_cnt, output_neuron_cnt, bias=True).requires_grad_(False)
+        self.output_neuron_cell = multi_step_output_neuron_cell
+
+        self.input_psp = input_psp
+        self.state_metric = InhibitionStateTracker(is_active=acc_states)
+
+        self.stdp_module = stdp_module
+
+    @measure_time
+    def forward(self, input_spikes: Tensor, state=None, train: bool = True) \
+            -> (Tensor, Tensor):
+        with torch.no_grad():
+            z_state = state
+
+            # (time, batch, input_neurons)
+            input_psps = self.input_psp(input_spikes)
+
+            z_in = self.linear(input_psps)
+            z_out, z_state = self.output_neuron_cell(z_in, z_state)
+
+            if train:
+                with Timer('stdp'):
+                    new_weights, new_biases = self.stdp_module(input_psps, z_out,
+                                                               self.linear.weight.data,
+                                                               self.linear.bias.data)
+                    self.linear.weight.data = new_weights
+                    self.linear.bias.data = new_biases
+
+            return z_out, z_state

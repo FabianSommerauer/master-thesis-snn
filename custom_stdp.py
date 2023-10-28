@@ -2,6 +2,7 @@ from typing import Literal, Tuple
 import torch
 import torch.nn as nn
 from my_metrics import LearningRatesTracker
+from my_timing_utils import Timer
 
 
 class BayesianSTDPClassic(nn.Module):
@@ -25,23 +26,28 @@ class BayesianSTDPClassic(nn.Module):
     def forward(self, input_psp: torch.Tensor, output_spikes: torch.Tensor,
                 weights: torch.Tensor, biases: torch.Tensor):
         with torch.no_grad():
-            mu_w = self.base_mu / self.N_k
-            mu_b = self.base_mu_bias / torch.sum(self.N_k, dim=0)
+            with Timer('mu_update'):
+                mu_w = self.base_mu / self.N_k
+                mu_b = self.base_mu_bias / torch.sum(self.N_k, dim=0)
 
-            new_weights, new_biases = apply_bayesian_stdp(input_psp, output_spikes, weights, biases,
-                                                          mu_w, mu_b, self.c)
+            with Timer('apply_bayesian_stdp'):
+                new_weights, new_biases = apply_bayesian_stdp(input_psp, output_spikes, weights, biases,
+                                                              mu_w, mu_b, self.c)
 
-            # (output_count)
-            out_dims = output_spikes.dim()
-            if out_dims == 1:
-                total_out_spikes = output_spikes
-            else:
-                total_out_spikes = torch.sum(output_spikes, tuple(range(out_dims - 1)))
+            with Timer('counter_update'):
+                # (output_count)
+                out_dims = output_spikes.dim()
+                if out_dims == 1:
+                    total_out_spikes = output_spikes
+                else:
+                    total_out_spikes = torch.sum(output_spikes, tuple(range(out_dims - 1)))
 
-            self.N_k += total_out_spikes[:, None]
+                self.N_k += total_out_spikes[:, None]
 
-            # collect learning rates for plotting
-            self.learning_rates_tracker(mu_w, mu_b)
+            # with Timer('track_learning_rates'):
+            #     # collect learning rates for plotting
+            #     self.learning_rates_tracker(mu_w, mu_b)
+            #     pass
 
             return new_weights, new_biases
 
@@ -136,17 +142,17 @@ def apply_bayesian_stdp(
 
     # (output_count)
     out_dims = output_spikes.dim()
-    if out_dims == 1:
-        total_out_spikes = output_spikes
-    else:
-        total_out_spikes = torch.sum(output_spikes, tuple(range(out_dims - 1)))
+    total_out_spikes = output_spikes if out_dims == 1 \
+        else output_spikes.sum(dim=tuple(range(out_dims - 1)))
 
-    # STDP weight update
-    # only applies to active neuron
-    dw = torch.einsum('...o,...i->oi', output_spikes, input_psp) * c * torch.exp(-weights) - total_out_spikes[:, None]
+    with Timer('dw_db'):
+        # STDP weight update
+        # only applies to active neuron
+        dw = torch.einsum('...o,...i->oi', output_spikes, input_psp) * c * torch.exp(-weights) - total_out_spikes[:, None]
+        # dw = torch.matmul(output_spikes[..., None], input_psp[..., None, :]) * c * torch.exp(-weights) - total_out_spikes[:, None]
 
-    # applies to all neurons (if at least one fired)
-    db = (torch.exp(-biases) * total_out_spikes - 1) * torch.max(total_out_spikes)
+        # applies to all neurons (if at least one fired)
+        db = (torch.exp(-biases) * total_out_spikes - 1) * total_out_spikes.any()
 
     weights = weights + mu_weights * dw
     biases = biases + mu_bias * db
