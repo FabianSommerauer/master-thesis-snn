@@ -136,7 +136,7 @@ for epoch in range(num_epochs):
             with Timer('metric_processing'):
                 output_spikes_np = output_spikes.cpu().numpy()
 
-                # total_train_output_spikes.extend(output_spikes_np)
+                total_train_output_spikes.append(output_spikes_np)
                 # for idx, time_range in enumerate(time_ranges):
                 #     total_time_ranges[idx].extend(time_range)
                 with Timer('cumulative_counts'):
@@ -145,7 +145,6 @@ for epoch in range(num_epochs):
                                                                         base_counts=None if i == 0 else
                                                                         cumulative_counts[-1])
                     # cumulative_counts_hist.extend(cumulative_counts)
-
 
                 offset += data.shape[0]
 
@@ -169,8 +168,10 @@ torch.save(model.state_dict(), "trained_mnist_bayesian_stdp_model.pth")
 
 # model.load_state_dict(torch.load("trained_bayesian_stdp_model.pth"))
 
+total_train_output_spikes = np.concatenate(total_train_output_spikes, axis=0)
 
 neuron_mapping = get_neuron_pattern_mapping(total_train_output_spikes, total_time_ranges)
+
 
 output_cell.rate_tracker.is_active = True
 output_cell.rate_tracker.reset()

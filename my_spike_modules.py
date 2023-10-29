@@ -72,6 +72,9 @@ class SpikePopulationGroupBatchToTimeEncoder(nn.Module):
 
         return grouped_time_ranges
 
+    def get_time_for_offset(self, offset):
+        return offset * (self.base_encoder.seq_length + self.delay_shift)
+
 
 class BinaryTimedPSP(nn.Module):
     def __init__(self, sigma=0.1, dt=0.001):

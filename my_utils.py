@@ -17,9 +17,8 @@ def get_neuron_pattern_mapping(output_spikes, pattern_time_ranges):
     pattern_num = len(pattern_time_ranges)
     output_neuron_num = output_spikes.shape[-1]
 
-    spike_counts = np.zeros((pattern_num,))
-
     for neuron_index in range(output_neuron_num):
+        spike_counts = np.zeros((pattern_num,))
         neuron_spikes = output_spikes[:, neuron_index]
         spike_times = np.where(neuron_spikes > 0)[0]
 
@@ -46,6 +45,9 @@ def get_predictions(output_spikes, time_ranges, pattern_mapping):
             neuron_spikes = output_spikes[:, neuron_index]
             spike_times = np.where(neuron_spikes > 0)[0]
 
+            if len(spike_times) == 0:
+                continue
+
             spike_counts[neuron_index] = np.sum((spike_times <= range_end) & (spike_times >= range_start))
 
         if np.sum(spike_counts) == 0:
@@ -57,7 +59,7 @@ def get_predictions(output_spikes, time_ranges, pattern_mapping):
     return predictions
 
 
-def get_cumulative_counts_over_time(output_spikes, time_ranges_per_pattern, base_counts=None):
+def get_cumulative_counts_over_time(output_spikes, time_ranges_per_pattern, base_counts=None, time_offset=0.0):
     """Get cumulative counts of output neuron firing over time
 
     Args:
@@ -78,7 +80,7 @@ def get_cumulative_counts_over_time(output_spikes, time_ranges_per_pattern, base
         if len(time_ranges) == 0:
             continue
         time_range = np.stack(time_ranges, axis=0)
-        in_range = np.any((spike_times[0][:, None] <= time_range[:, 1]) & (spike_times[0][:, None] >= time_range[:, 0]),
+        in_range = np.any((spike_times[0][:, None] <= time_range[:, 1] - time_offset) & (spike_times[0][:, None] >= time_range[:, 0] - time_offset),
                           axis=-1)
 
         counts_over_time[spike_times[0][in_range], pattern_idx, spike_times[-1][in_range]] = 1.
