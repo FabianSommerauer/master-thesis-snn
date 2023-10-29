@@ -280,49 +280,6 @@ class BayesianSTDPModel(nn.Module):
 
 # Efficient implementations of the above classes
 
-class OUInhibitionProcess(object):
-    def __init__(self, inhibition_increase=3000, inhibition_rest=0, inhibition_tau=0.005,
-                 noise_rest=0, noise_tau=0.005, noise_sigma=50, dt=0.001):
-        super(OUInhibitionProcess, self).__init__()
-
-        self.inhibition_increase = inhibition_increase
-        self.inhibition_rest = inhibition_rest
-        # self.inhibition_tau = inhibition_tau
-        self.noise_rest = noise_rest
-        # self.noise_tau = noise_tau
-        # self.noise_sigma = noise_sigma
-
-        self.dt = dt
-        # self.dt_sqrt = np.sqrt(dt)
-
-        self.inhibition_decay_factor = np.exp(- dt / inhibition_tau)
-        self.noise_decay_factor = np.exp(- dt / noise_tau)
-        self.total_noise_sigma = noise_sigma  # todo: * np.sqrt((1. - self.noise_decay_factor ** 2) / 2. * noise_tau)
-
-    @measure_time
-    def step(self, spike_occurrences, state=None):
-        if state is None:
-            inhibition = torch.zeros_like(spike_occurrences) * self.inhibition_rest
-            noise = torch.ones_like(spike_occurrences) * self.noise_rest
-        else:
-            inhibition, noise = state
-
-        with Timer('inhibition'):
-            inhibition = (self.inhibition_rest + (inhibition - self.inhibition_rest) * self.inhibition_decay_factor
-                          + spike_occurrences * self.inhibition_increase)
-
-        # Euler approximation of Ornstein-Uhlenbeck process
-        # noise = (1 - self.decay_rate * self.dt) * noise \
-        #             + self.decay_sigma * self.dt_sqrt * torch.normal(0, 1, noise.shape)
-
-        with Timer('noise'):
-            # more direct approximation based on
-            # https://github.com/cantaro86/Financial-Models-Numerical-Methods/blob/master/6.1%20Ornstein-Uhlenbeck%20process%20and%20applications.ipynb
-            noise = (self.noise_rest + (noise - self.noise_rest) * self.noise_decay_factor
-                     + self.total_noise_sigma * torch.normal(0, 1, noise.shape))
-
-        return inhibition, noise
-
 
 @dataclass
 class InhibitionArgs:
@@ -407,9 +364,9 @@ class EfficientStochasticOutputNeuronCell(nn.Module):
             # ensures that only one output neuron can fire at a time
             out_spikes = (out_spike_locations * spike_occurred).to(dtype=inputs.dtype)
 
-        state = (inhibition[-1], noise[-1])
+        states = (inhibition, noise)
 
-        return out_spikes, state
+        return out_spikes, states
 
     def get_spike_occurrences_and_inhibition(self, inhibition_upper_threshold, last_inhibition):
         inhibition = torch.zeros(inhibition_upper_threshold.shape[0] + 1,
@@ -435,13 +392,13 @@ class EfficientBayesianSTDPModel(nn.Module):
     def __init__(self, input_neuron_cnt, output_neuron_cnt,
                  input_psp, multi_step_output_neuron_cell,
                  stdp_module,
-                 acc_states=False):
+                 track_states=False):
         super().__init__()
         self.linear = nn.Linear(input_neuron_cnt, output_neuron_cnt, bias=True).requires_grad_(False)
         self.output_neuron_cell = multi_step_output_neuron_cell
 
         self.input_psp = input_psp
-        self.state_metric = InhibitionStateTracker(is_active=acc_states)
+        self.state_metric = InhibitionStateTracker(is_active=track_states, is_batched=True)
 
         self.stdp_module = stdp_module
 
@@ -455,7 +412,11 @@ class EfficientBayesianSTDPModel(nn.Module):
             input_psps = self.input_psp(input_spikes)
 
             z_in = self.linear(input_psps)
-            z_out, z_state = self.output_neuron_cell(z_in, z_state)
+            z_out, z_states = self.output_neuron_cell(z_in, z_state)
+
+            with Timer('state_metric'):
+                # collect inhibition/noise states for plotting
+                self.state_metric.update(z_states)
 
             if train:
                 with Timer('stdp'):
@@ -465,4 +426,6 @@ class EfficientBayesianSTDPModel(nn.Module):
                     self.linear.weight.data = new_weights
                     self.linear.bias.data = new_biases
 
-            return z_out, z_state
+            last_state = (z_states[0][-1], z_states[1][-1])
+
+            return z_out, last_state

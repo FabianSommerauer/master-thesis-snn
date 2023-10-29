@@ -3,15 +3,14 @@ from torchmetrics import metric
 import matplotlib.pyplot as plt
 
 
-class InhibitionStateTracker(metric.Metric):
+class InhibitionStateTracker:
     """Collects the inhibition/noise states of a neuron in a list."""
 
-    def __init__(self, is_active=True, dist_sync_on_step=False):
-        super().__init__(dist_sync_on_step=dist_sync_on_step)
-
+    def __init__(self, is_active=True, is_batched=False):
         self.is_active = is_active
-        self.add_state("inhibition_states", default=[], dist_reduce_fx="cat")
-        self.add_state("noise_states", default=[], dist_reduce_fx="cat")
+        self.inhibition_states = []
+        self.noise_states = []
+        self.is_batched = is_batched
 
     def update(self, state):
         if not self.is_active:
@@ -22,13 +21,28 @@ class InhibitionStateTracker(metric.Metric):
         self.noise_states.append(noise_states)
 
     def compute(self):
-        return self.inhibition_states, self.noise_states
+        if len(self.inhibition_states) == 0 or len(self.noise_states) == 0:
+            return None, None
+
+        if self.is_batched:
+            inhibition_states = torch.concat(self.inhibition_states, dim=0)
+            noise_states = torch.concat(self.noise_states, dim=0)
+        else:
+            inhibition_states = torch.stack(self.inhibition_states, dim=0)
+            noise_states = torch.stack(self.noise_states, dim=0)
+
+        return inhibition_states, noise_states
 
     def plot(self):
         """Plot total inhibition and noise (sum of both) over time."""
         inhibition_states, noise_states = self.compute()
-        inhibition = torch.stack(inhibition_states, dim=0).cpu().numpy()
-        noise = torch.stack(noise_states, dim=0).cpu().numpy()
+
+        if inhibition_states is None or noise_states is None:
+            return
+
+        inhibition = inhibition_states.cpu().numpy()
+        noise = noise_states.cpu().numpy()
+
         # plt.plot(inhibition, label='Inhibition')
         # plt.plot(noise, label='Noise')
         plt.plot(inhibition + noise, label='Total')
@@ -36,14 +50,13 @@ class InhibitionStateTracker(metric.Metric):
         plt.show()
 
 
-class SpikeRateTracker(metric.Metric):
+class SpikeRateTracker:
     """Collects the spike rates of each output neuron over time."""
 
-    def __init__(self, is_active=True, dist_sync_on_step=False):
-        super().__init__(dist_sync_on_step=dist_sync_on_step)
+    def __init__(self, is_active=True):
         self.is_active = is_active
-        self.add_state("input_spike_rates", default=[], dist_reduce_fx="cat")
-        self.add_state("log_total_spike_rates", default=[], dist_reduce_fx="cat")
+        self.input_spike_rates = []
+        self.log_total_spike_rates = []
 
     def update(self, input_rates, log_total_spike_rates):
         if not self.is_active:
@@ -100,15 +113,13 @@ class SpikeRateTracker(metric.Metric):
         ax.legend()
 
 
-class LearningRatesTracker(metric.Metric):
+class LearningRatesTracker:
     """Collects the learning rates of each output neuron over time."""
 
-    def __init__(self, is_active=True, dist_sync_on_step=False):
-        super().__init__(dist_sync_on_step=dist_sync_on_step)
-
+    def __init__(self, is_active=True):
         self.is_active = is_active
-        self.add_state("mu_w_history", default=[], dist_reduce_fx="cat")
-        self.add_state("mu_b_history", default=[], dist_reduce_fx="cat")
+        self.mu_w_history = []
+        self.mu_b_history = []
 
     def update(self, mu_w, mu_b):
         if not self.is_active:
@@ -133,15 +144,13 @@ class LearningRatesTracker(metric.Metric):
         plt.show()
 
 
-class WeightsTracker(metric.Metric):
+class WeightsTracker:
     """Collects the weights and biases of a layer over time."""
 
-    def __init__(self, is_active=True, dist_sync_on_step=False):
-        super().__init__(dist_sync_on_step=dist_sync_on_step)
-
+    def __init__(self, is_active=True):
         self.is_active = is_active
-        self.add_state("weights_history", default=[], dist_reduce_fx="cat")
-        self.add_state("bias_history", default=[], dist_reduce_fx="cat")
+        self.weights_history = []
+        self.bias_history = []
 
     def update(self, weights, biases):
         if not self.is_active:
