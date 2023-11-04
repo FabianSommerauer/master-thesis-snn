@@ -19,7 +19,7 @@ torch.set_grad_enabled(False)
 # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 # Set seed (todo: test with different seeds)
-seed = 45
+seed = 4444
 random.seed(seed)
 _ = torch.manual_seed(seed)
 np.random.seed(seed)
@@ -27,9 +27,9 @@ np.random.seed(seed)
 # Data config
 batch_size = 1
 num_patterns = 4
-num_repeats_train = 1000
-num_repeats_test = 10
-pattern_length = 30
+num_repeats_train = 500
+num_repeats_test = 4
+pattern_length = 100
 pattern_sparsity = 0.5
 
 # Load data
@@ -55,7 +55,7 @@ delay = 0.01
 
 # todo: experiment with different rates (maybe different rates for train and test as well)
 input_encoding_rate = 100
-input_encoding_inactive_rate = 0
+input_encoding_inactive_rate = 10
 
 # Model setup
 train_encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration,
@@ -71,28 +71,28 @@ stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1,
                                               collect_history=True)
 # stdp_module = custom_stdp.BayesianSTDPAdaptive(input_neurons, output_neurons, c=1, collect_history=True)  #todo: get this to work
 
-# inhibition_process = OUInhibitionProcess(inhibition_increase=200, inhibition_rest=0, inhibition_tau=0.005,
-#                                          noise_rest=0, noise_tau=0.005, noise_sigma=50, dt=dt)
-# output_cell = StochasticOutputNeuronCell(inhibition_process=inhibition_process, dt=dt, collect_rates=True)
+inhibition_process = OUInhibitionProcess(inhibition_increase=1000, inhibition_rest=0, inhibition_tau=0.005,
+                                         noise_rest=0, noise_tau=0.005, noise_sigma=50, dt=dt)
+output_cell = StochasticOutputNeuronCell(inhibition_process=inhibition_process, dt=dt, collect_rates=True)
+
+model = BayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, dt),
+                          output_neuron_cell=output_cell,
+                          stdp_module=stdp_module, acc_states=False)
+
+# output_cell = EfficientStochasticOutputNeuronCell(inhibition_args=InhibitionArgs(1000, 0, 0.005),
+#                                                   noise_args=NoiseArgs(0, 0.005, 50),
+#                                                   dt=dt, collect_rates=False)
 #
-# model = BayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, dt),
-#                           output_neuron_cell=output_cell,
-#                           stdp_module=stdp_module, acc_states=False)
-
-output_cell = EfficientStochasticOutputNeuronCell(inhibition_args=InhibitionArgs(200, 0, 0.005),
-                                                  noise_args=NoiseArgs(0, 0.005, 50),
-                                                  dt=dt, collect_rates=False)
-
-model = EfficientBayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, dt),
-                                   multi_step_output_neuron_cell=output_cell,
-                                   stdp_module=stdp_module, acc_states=False)
+# model = EfficientBayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, dt),
+#                                    multi_step_output_neuron_cell=output_cell,
+#                                    stdp_module=stdp_module, track_states=False)
 
 # Model initialization
 # todo: experiment with different initializations
-# weight_init = 1
-# bias_init = 2
-# model.linear.weight.data.fill_(weight_init)
-# model.linear.bias.data.fill_(bias_init)
+weight_init = 2
+bias_init = 2
+model.linear.weight.data.fill_(weight_init)
+model.linear.bias.data.fill_(bias_init)
 
 # Training config
 num_epochs = 1  # run for 1 epoch - each data sample is seen only once
@@ -169,38 +169,53 @@ output_cell.rate_tracker.reset()
 model.state_metric.is_active = True
 model.state_metric.reset()
 
+total_time_ranges = [[] for _ in range(distinct_targets.shape[0])]
+total_input_spikes = []
+total_output_spikes = []
+
 # test loop
 total_acc = 0
+offset = 0
 for i, (data, targets) in enumerate(iter(test_loader)):
     input_spikes = test_encoder(data)
+    total_input_spikes.append(input_spikes.cpu().numpy())
 
     targets_np = targets.cpu().numpy()
     time_ranges = test_encoder.get_time_ranges_for_patterns(targets_np,
-                                                            distinct_pattern_count=distinct_targets.shape[0])
+                                                            distinct_pattern_count=distinct_targets.shape[0],
+                                                            offset=offset)
     time_ranges_ungrouped = test_encoder.get_time_ranges(targets_np.shape[0])
+
+    for idx, time_range in enumerate(time_ranges):
+        total_time_ranges[idx].extend(time_range)
 
     # todo: we reset the state for every batch here, should we?
     output_spikes, _ = model(input_spikes, state=None, train=False)
+    total_output_spikes.append(output_spikes.cpu().numpy())
 
     preds = get_predictions(output_spikes.cpu().numpy(), time_ranges_ungrouped, neuron_mapping)
     total_acc += np.mean(preds == targets_np)
+
+    offset += data.shape[0]
 
 print(f"Test Accuracy: {total_acc / len(test_loader) * 100:.4f}%")
 
 # TODO: detailed evaluation; plot weights; plot bias; plot firing rates; plot stdp; plot log probabilities; plot conditional crossentropy;
 # TODO: plot accuracy over training based on final pattern mapping
 
-cross_entropy_hist = np.concatenate(cross_entropy_hist, axis=0)
-cross_entropy_paper_hist = np.concatenate(cross_entropy_paper_hist, axis=0)
+total_input_spikes = np.concatenate(total_input_spikes, axis=0)
+total_output_spikes = np.concatenate(total_output_spikes, axis=0)
 
-plt.plot(cross_entropy_hist)
-plt.plot(cross_entropy_paper_hist)
+
+plt.plot(cross_entropy_hist, label='Crossentropy')
+plt.plot(cross_entropy_paper_hist, label='Paper Crossentropy')
 plt.title('Training')
 plt.xlabel('Time Step')
 plt.ylabel('Normalized Conditional Crossentropy')
 plt.ylim([0, 1])
 plt.xticks(np.arange(0, len(cross_entropy_hist), 100. / dt),
            [str(x) + 's' for x in np.arange(0, len(cross_entropy_hist) * dt, 100)])
+plt.legend()
 plt.show()
 
 model.state_metric.plot()
@@ -214,9 +229,9 @@ plt.figure(figsize=(10, 7))
 
 plt.subplot(3, 1, 1)
 first_ax = plt.gca()
-spikes = [input_spikes[:, i].cpu().numpy() for i in range(input_spikes.shape[1])]
+spikes = [total_input_spikes[:, i] for i in range(total_input_spikes.shape[1])]
 # raster_plot(plt.gca(), spikes)
-raster_plot_multi_color(plt.gca(), spikes, time_ranges, group_colors)
+raster_plot_multi_color(plt.gca(), spikes, total_time_ranges, group_colors)
 plt.title('Input Spikes')
 plt.xlabel('Time Step')
 plt.ylabel('Neuron')
@@ -224,8 +239,8 @@ plt.ylabel('Neuron')
 # Plot output spikes using a raster plot
 plt.subplot(3, 1, 2)
 plt.gca().sharex(first_ax)
-spikes = [output_spikes[:, i].cpu().numpy() for i in range(output_spikes.shape[1])]
-raster_plot_multi_color(plt.gca(), spikes, time_ranges, group_colors, default_color='black',
+spikes = [total_output_spikes[:, i] for i in range(total_output_spikes.shape[1])]
+raster_plot_multi_color(plt.gca(), spikes, total_time_ranges, group_colors, default_color='black',
                         allowed_colors_per_train=allowed_colors)
 # raster_plot_multi_color(spikes, plt.gca(), get_color_picker(("red", "green", "blue"), test_data_time_ranges))
 plt.title('Output Spikes')

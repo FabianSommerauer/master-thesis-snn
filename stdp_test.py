@@ -15,7 +15,7 @@ data_path = '/tmp/data/mnist'
 
 # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-seed = 44
+seed = 4404
 random.seed(seed)
 _ = torch.manual_seed(seed)
 np.random.seed(seed)
@@ -90,12 +90,12 @@ duplications = 1
 train_repeats = 666
 test_repeats = 4
 
-binary_input_variable_cnt = 10
+binary_input_variable_cnt = 100
 input_neurons = binary_input_variable_cnt * 2 * duplications
-output_neurons = 3
+output_neurons = 5
 
 dt = 0.001
-sigma = 0.01
+sigma = 0.005
 rate_multiplier = 1
 
 presentation_duration = 0.04
@@ -133,7 +133,7 @@ print(data)
 
 pattern_duration = presentation_duration + delay
 
-pattern_order = torch.tensor([0, 1, 2])
+pattern_order = torch.tensor([i for i in range(output_neurons)])
 train_pattern_order = pattern_order.repeat(train_repeats)
 test_pattern_order = pattern_order.repeat(test_repeats)
 
@@ -145,11 +145,13 @@ train_time_ranges = train_encoder.get_time_ranges_for_patterns(train_pattern_ord
 test_time_ranges = test_encoder.get_time_ranges_for_patterns(test_pattern_order)
 test_time_ranges_ungrouped = test_encoder.get_time_ranges(len(test_pattern_order))
 
-weight_init = 1  # np.log(1./input_neurons) + np.log(1)  # todo
+weight_init = 2  # np.log(1./input_neurons) + np.log(1)  # todo
 bias_init = 2  # np.log(1./output_neurons)
 model.linear.weight.data.fill_(weight_init)
 model.linear.bias.data.fill_(bias_init)
 output_spikes, _ = model(input_spikes, train=True)
+
+Timer.print()
 
 # todo: check what is actually saved here
 # torch.save(model.state_dict(), "trained_bayesian_stdp_model.pth")
@@ -191,7 +193,8 @@ model.state_metric.plot()
 # plt.plot(noise)
 # plt.show()
 
-group_colors = ("tab:orange", "tab:green", "tab:blue")
+cmap = plt.get_cmap("tab10")
+group_colors = [cmap(i) for i in range(output_neurons)]
 allowed_colors = [[idx, ] for idx in
                   neuron_mapping]  # todo: find these by finding the correct output neuron for each pattern
 
@@ -231,7 +234,7 @@ print(model.linear.bias)
 
 preds = get_predictions(output_spikes, test_time_ranges_ungrouped, neuron_mapping)
 # todo: test if below crashes on missing predictions
-acc = torchmetrics.functional.accuracy(torch.tensor(preds), test_pattern_order, task="multiclass", num_classes=3)
+acc = torchmetrics.functional.accuracy(torch.tensor(preds), test_pattern_order, task="multiclass", num_classes=output_neurons)
 print(acc)
 
 stdp_module.learning_rates_tracker.plot()

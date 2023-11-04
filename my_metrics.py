@@ -33,6 +33,10 @@ class InhibitionStateTracker:
 
         return inhibition_states, noise_states
 
+    def reset(self):
+        self.inhibition_states = []
+        self.noise_states = []
+
     def plot(self):
         """Plot total inhibition and noise (sum of both) over time."""
         inhibition_states, noise_states = self.compute()
@@ -53,10 +57,11 @@ class InhibitionStateTracker:
 class SpikeRateTracker:
     """Collects the spike rates of each output neuron over time."""
 
-    def __init__(self, is_active=True):
+    def __init__(self, is_active=True, is_batched=False):
         self.is_active = is_active
         self.input_spike_rates = []
         self.log_total_spike_rates = []
+        self.is_batched = is_batched
 
     def update(self, input_rates, log_total_spike_rates):
         if not self.is_active:
@@ -69,11 +74,22 @@ class SpikeRateTracker:
         if not self.is_active:
             return None, None
 
-        input_rates = torch.stack(self.input_spike_rates, dim=0)
-        log_total_spike_rates = torch.stack(self.log_total_spike_rates, dim=0)
+        if len(self.input_spike_rates) == 0 or len(self.log_total_spike_rates) == 0:
+            return None, None
+
+        if self.is_batched:
+            input_rates = torch.concat(self.input_spike_rates, dim=0)
+            log_total_spike_rates = torch.concat(self.log_total_spike_rates, dim=0)
+        else:
+            input_rates = torch.stack(self.input_spike_rates, dim=0)
+            log_total_spike_rates = torch.stack(self.log_total_spike_rates, dim=0)
 
         normalized_rates = input_rates / torch.sum(input_rates, dim=-1, keepdim=True)
         return normalized_rates, log_total_spike_rates
+
+    def reset(self):
+        self.input_spike_rates = []
+        self.log_total_spike_rates = []
 
     def plot(self):
         """Plot relative firing rates and log total firing rates over time."""
@@ -131,14 +147,26 @@ class LearningRatesTracker:
     def compute(self):
         return torch.stack(self.mu_w_history), torch.stack(self.mu_b_history)
 
+    def reset(self):
+        self.mu_w_history = []
+        self.mu_b_history = []
+
     def plot(self):
         mu_w_history, mu_b_history = self.compute()
 
-        # todo: this has different interpretations for different STDP modules -> fix
-        plt.plot(torch.mean(mu_w_history, -1)[:, 0], label='mu_w 0')
-        plt.plot(torch.mean(mu_w_history, -1)[:, 1], label='mu_w 1')
-        plt.plot(torch.mean(mu_w_history, -1)[:, 2], label='mu_w 2')
-        plt.plot(torch.mean(mu_b_history, -1)[:], label='mu_b')
+        # # todo: this has different interpretations for different STDP modules -> fix
+        # plt.plot(torch.mean(mu_w_history, -1)[:, 0], label='mu_w 0')
+        # plt.plot(torch.mean(mu_w_history, -1)[:, 1], label='mu_w 1')
+        # plt.plot(torch.mean(mu_w_history, -1)[:, 2], label='mu_w 2')
+        # plt.plot(torch.mean(mu_b_history, -1)[:], label='mu_b')
+
+        mu_w_hist_mean = torch.mean(mu_w_history, -1)
+        mu_b_hist_mean = torch.mean(mu_b_history, -1)
+
+        for i in range(mu_w_hist_mean.shape[-1]):
+            plt.plot(mu_w_hist_mean[:, i], label=f'mu_w {i}')
+        plt.plot(mu_b_hist_mean, label='mu_b')
+
         plt.yscale('log')
         plt.legend()
         plt.show()
@@ -161,6 +189,10 @@ class WeightsTracker:
 
     def compute(self):
         return torch.stack(self.weights_history), torch.stack(self.bias_history)
+
+    def reset(self):
+        self.weights_history = []
+        self.bias_history = []
 
     def plot_biases_exp(self):
         weights_history, bias_history = self.compute()

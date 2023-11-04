@@ -44,10 +44,10 @@ class BayesianSTDPClassic(nn.Module):
 
                 self.N_k += total_out_spikes[:, None]
 
-            # with Timer('track_learning_rates'):
-            #     # collect learning rates for plotting
-            #     self.learning_rates_tracker(mu_w, mu_b)
-            #     pass
+            with Timer('track_learning_rates'):
+                # collect learning rates for plotting
+                self.learning_rates_tracker.update(mu_w, mu_b)
+                pass
 
             return new_weights, new_biases
 
@@ -112,7 +112,7 @@ class BayesianSTDPAdaptive(nn.Module):
                     torch.exp(-self.bias_first_moment) + 1.0)
 
             # collect learning rates for plotting
-            self.learning_rates_tracker(self.mu_w, self.mu_b)
+            self.learning_rates_tracker.update(self.mu_w, self.mu_b)
 
             return new_weights, new_biases
 
@@ -149,7 +149,7 @@ def apply_bayesian_stdp(
         # STDP weight update
         # only applies to active neuron
         dw = torch.einsum('...o,...i->oi', output_spikes, input_psp) * c * torch.exp(-weights) - total_out_spikes[:, None]
-        # dw = torch.matmul(output_spikes[..., None], input_psp[..., None, :]) * c * torch.exp(-weights) - total_out_spikes[:, None]
+        # dw = torch.sum(torch.matmul(output_spikes[..., None], input_psp[..., None, :]), TODO) * c * torch.exp(-weights) - total_out_spikes[:, None]
 
         # applies to all neurons (if at least one fired)
         db = (torch.exp(-biases) * total_out_spikes - 1) * total_out_spikes.any()

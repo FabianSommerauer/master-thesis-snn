@@ -55,7 +55,8 @@ class SpikePopulationGroupBatchToTimeEncoder(nn.Module):
     def get_time_ranges(self, pattern_count, epsilon=1e-5, offset=0):
         total_len = self.base_encoder.seq_length + self.delay_shift
         # todo: check with epsilon
-        time_ranges = [((i + offset) * total_len - epsilon, (i + offset) * total_len + total_len - epsilon)
+        time_ranges = [((i + offset) * total_len - epsilon,
+                        (i + offset) * total_len + self.base_encoder.seq_length + epsilon)
                        for i in range(pattern_count)]
 
         return time_ranges
@@ -191,8 +192,9 @@ class StochasticOutputNeuronCell(nn.Module):
             log_rates = inputs - inhibition + noise
             relative_input_rates = torch.exp(inputs - torch.logsumexp(inputs, dim=-1, keepdim=True))
 
-            # # collect rates for plotting
-            # self.rate_tracker.update(relative_input_rates, log_rates)
+            with Timer('rate_track'):
+                # collect rates for plotting
+                self.rate_tracker.update(relative_input_rates, log_rates)
 
             # more numerically stable to utilize log
             log_total_rate = torch.logsumexp(log_rates, -1, keepdim=True)
@@ -237,7 +239,7 @@ class BayesianSTDPModel(nn.Module):
         self.stdp_module = stdp_module
 
     @measure_time
-    def forward(self, input_spikes: Tensor, state=None, train: bool = True, batched_update: bool = True) \
+    def forward(self, input_spikes: Tensor, state=None, train: bool = True, batched_update: bool = False) \
             -> (Tensor, Tensor):
         with torch.no_grad():
             z_state = state
@@ -254,10 +256,10 @@ class BayesianSTDPModel(nn.Module):
 
                 z_out_acc.append(z_out)
 
-                # with Timer('state_metric'):
-                #     # collect inhibition/noise states for plotting
-                #     self.state_metric(z_state)
-                #     pass
+                with Timer('state_track'):
+                    # collect inhibition/noise states for plotting
+                    self.state_metric.update(z_state)
+
                 if train and not batched_update:
                     with Timer('stdp'):
                         new_weights, new_biases = self.stdp_module(input_psp, z_out,
@@ -304,7 +306,7 @@ class EfficientStochasticOutputNeuronCell(nn.Module):
         self.dt = dt
         self.log_dt = np.log(dt)
 
-        self.rate_tracker = SpikeRateTracker(is_active=collect_rates)
+        self.rate_tracker = SpikeRateTracker(is_active=collect_rates, is_batched=True)
 
         max_noise_filter_duration = 10 * self.noise_args.noise_tau
         self.noise_filter = torch.exp(-torch.arange(0, max_noise_filter_duration, self.dt) / self.noise_args.noise_tau)
@@ -332,9 +334,6 @@ class EfficientStochasticOutputNeuronCell(nn.Module):
         with Timer('rate_calc'):
             log_rates_wo_inhibition = inputs + noise
             relative_input_rates = torch.exp(inputs - torch.logsumexp(inputs, dim=-1, keepdim=True))
-
-            # # collect rates for plotting
-            # self.rate_tracker.update(relative_input_rates, log_rates)
 
             # more numerically stable to utilize log
             # (inhibition is constant so we can pull it out of the logsumexp)
@@ -364,7 +363,13 @@ class EfficientStochasticOutputNeuronCell(nn.Module):
             # ensures that only one output neuron can fire at a time
             out_spikes = (out_spike_locations * spike_occurred).to(dtype=inputs.dtype)
 
-        states = (inhibition, noise)
+        with Timer('rate_track'):
+            log_rates = log_rates_wo_inhibition - inhibition[..., None]
+
+            # collect rates for plotting
+            self.rate_tracker.update(relative_input_rates, log_rates)
+
+        states = (inhibition, noise[..., 0])
 
         return out_spikes, states
 
@@ -378,8 +383,8 @@ class EfficientStochasticOutputNeuronCell(nn.Module):
         for ts in range(inhibition_upper_threshold.shape[0]):
             spike_occurred[ts] = inhibition[ts] < inhibition_upper_threshold[ts]
             inhibition[ts + 1] = (
-                        self.inhibition_rest + (inhibition[ts] - self.inhibition_rest) * self.inhibition_factor
-                        + spike_occurred[ts] * self.inhibition_increase)
+                    self.inhibition_rest + (inhibition[ts] - self.inhibition_rest) * self.inhibition_factor
+                    + spike_occurred[ts] * self.inhibition_increase)
 
         return inhibition[1:], spike_occurred
 

@@ -52,6 +52,7 @@ def get_predictions(output_spikes, time_ranges, pattern_mapping):
 
         if np.sum(spike_counts) == 0:
             predictions[range_idx] = -1.
+            continue
 
         max_neuron = np.argmax(spike_counts)
         predictions[range_idx] = pattern_mapping[max_neuron]
