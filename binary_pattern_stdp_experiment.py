@@ -19,14 +19,14 @@ torch.set_grad_enabled(False)
 # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 # Set seed (todo: test with different seeds)
-seed = 4444
+seed = 4446
 random.seed(seed)
 _ = torch.manual_seed(seed)
 np.random.seed(seed)
 
 # Data config
 batch_size = 1
-num_patterns = 4
+num_patterns = 10
 num_repeats_train = 500
 num_repeats_test = 4
 pattern_length = 100
@@ -67,25 +67,25 @@ test_encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration,
                                                       delay, dt)
 
 stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1,
-                                              base_mu=1., base_mu_bias=0.5,
+                                              base_mu=1./batch_size, base_mu_bias=0.5/batch_size,
                                               collect_history=True)
 # stdp_module = custom_stdp.BayesianSTDPAdaptive(input_neurons, output_neurons, c=1, collect_history=True)  #todo: get this to work
 
-inhibition_process = OUInhibitionProcess(inhibition_increase=1000, inhibition_rest=0, inhibition_tau=0.005,
-                                         noise_rest=0, noise_tau=0.005, noise_sigma=50, dt=dt)
-output_cell = StochasticOutputNeuronCell(inhibition_process=inhibition_process, dt=dt, collect_rates=True)
-
-model = BayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, dt),
-                          output_neuron_cell=output_cell,
-                          stdp_module=stdp_module, acc_states=False)
-
-# output_cell = EfficientStochasticOutputNeuronCell(inhibition_args=InhibitionArgs(1000, 0, 0.005),
-#                                                   noise_args=NoiseArgs(0, 0.005, 50),
-#                                                   dt=dt, collect_rates=False)
+# inhibition_process = OUInhibitionProcess(inhibition_increase=1000, inhibition_rest=0, inhibition_tau=0.005,
+#                                          noise_rest=0, noise_tau=0.005, noise_sigma=50, dt=dt)
+# output_cell = StochasticOutputNeuronCell(inhibition_process=inhibition_process, dt=dt, collect_rates=True)
 #
-# model = EfficientBayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, dt),
-#                                    multi_step_output_neuron_cell=output_cell,
-#                                    stdp_module=stdp_module, track_states=False)
+# model = BayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, dt),
+#                           output_neuron_cell=output_cell,
+#                           stdp_module=stdp_module, acc_states=False)
+
+output_cell = EfficientStochasticOutputNeuronCell(inhibition_args=InhibitionArgs(1000, 0, 0.005),
+                                                  noise_args=NoiseArgs(0, 0.005, 50),
+                                                  dt=dt, collect_rates=False)
+
+model = EfficientBayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, dt),
+                                   multi_step_output_neuron_cell=output_cell,
+                                   stdp_module=stdp_module, track_states=False)
 
 # Model initialization
 # todo: experiment with different initializations

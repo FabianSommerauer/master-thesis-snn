@@ -7,6 +7,7 @@ from my_timing_utils import Timer
 
 class BayesianSTDPClassic(nn.Module):
     def __init__(self, output_size, c: float = 1, base_mu: float = 1, base_mu_bias: float = 1,
+                 time_batch_size: int = 10,
                  collect_history: bool = False):
         super().__init__()
         self.base_mu = base_mu
@@ -16,6 +17,8 @@ class BayesianSTDPClassic(nn.Module):
         self.N_k = torch.ones((output_size, 1))
 
         self.c = c
+
+        self.time_batch_size = time_batch_size
 
         self.learning_rates_tracker = LearningRatesTracker(is_active=collect_history)
 
@@ -32,7 +35,7 @@ class BayesianSTDPClassic(nn.Module):
 
             with Timer('apply_bayesian_stdp'):
                 new_weights, new_biases = apply_bayesian_stdp(input_psp, output_spikes, weights, biases,
-                                                              mu_w, mu_b, self.c)
+                                                              mu_w, mu_b, self.c, self.time_batch_size)
 
             with Timer('counter_update'):
                 # (output_count)
@@ -53,7 +56,9 @@ class BayesianSTDPClassic(nn.Module):
 
 
 class BayesianSTDPAdaptive(nn.Module):
-    def __init__(self, input_size, output_size, c: float = 1, collect_history: bool = False):
+    def __init__(self, input_size, output_size, c: float = 1,
+                 time_batch_size: int = 10,
+                 collect_history: bool = False):
         super().__init__()
         self.input_size = input_size
         self.output_size = output_size
@@ -67,6 +72,8 @@ class BayesianSTDPAdaptive(nn.Module):
         self.bias_second_moment = None
 
         self.c = c
+
+        self.time_batch_size = time_batch_size
 
         self.learning_rates_tracker = LearningRatesTracker(is_active=collect_history)
         # self.weight_first_moment_history = []
@@ -89,7 +96,8 @@ class BayesianSTDPAdaptive(nn.Module):
                 weights: torch.Tensor, biases: torch.Tensor):
         with torch.no_grad():
             new_weights, new_biases = apply_bayesian_stdp(input_psp, output_spikes, weights, biases,
-                                                          self.mu_w, self.mu_b, self.c)
+                                                          self.mu_w, self.mu_b, self.c,
+                                                          self.time_batch_size)
 
             if self.weight_first_moment is None:
                 # start with variance of 1 to avoid getting stuck on initial parameter values
@@ -102,8 +110,16 @@ class BayesianSTDPAdaptive(nn.Module):
                 self.weight_first_moment = self.mu_w * new_weights + (1 - self.mu_w) * self.weight_first_moment
                 self.weight_second_moment = self.mu_w * new_weights ** 2 + (1 - self.mu_w) * self.weight_second_moment
 
+                # TODO
+                # self.weight_first_moment = self.weight_first_moment / (1 - self.mu_w ** time_step + 1e-8)
+                # self.weight_second_moment = self.weight_second_moment / (1 - self.mu_w ** time_step + 1e-8)
+
                 self.bias_first_moment = self.mu_b * biases + (1 - self.mu_b) * self.bias_first_moment
                 self.bias_second_moment = self.mu_b * biases ** 2 + (1 - self.mu_b) * self.bias_second_moment
+
+                # TODO
+                # self.bias_first_moment = self.bias_first_moment / (1 - self.mu_b ** time_step + 1e-8)
+                # self.bias_second_moment = self.bias_second_moment / (1 - self.mu_b ** time_step + 1e-8)
 
             # adaptive learning rates with variance tracking
             self.mu_w = (self.weight_second_moment - self.weight_first_moment ** 2) / (
@@ -117,6 +133,7 @@ class BayesianSTDPAdaptive(nn.Module):
             return new_weights, new_biases
 
 
+@torch.jit.script
 def apply_bayesian_stdp(
         input_psp: torch.Tensor,
         output_spikes: torch.Tensor,
@@ -125,11 +142,12 @@ def apply_bayesian_stdp(
         mu_weights: torch.Tensor,
         mu_bias: torch.Tensor,
         c: float = 1,
+        time_batch_size: int = 10
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """STDP step for bayesian computation.
     Input:
-        input_psp (torch.Tensor): Postsynaptic potential induced by each input neuron during single time step; shape: (batch, input_count)
-        output_spikes (torch.Tensor): Spikes of the output neurons at single time step; shape: (batch, output_count)
+        input_psp (torch.Tensor): Postsynaptic potential induced by each input neuron during single time step; shape: (time, ..., input_count)
+        output_spikes (torch.Tensor): Spikes of the output neurons at single time step; shape: (time, ..., output_count)
         weights (torch.Tensor): Weight tensor of linear layer connecting pre- and postsynaptic layers; shape: (output_count, input_count)
         biases (torch.Tensor): Bias tensor of linear layer connecting pre- and postsynaptic layers; shape: (output_count)
         mu_weights (torch.Tensor): learning rates for the weights
@@ -140,21 +158,40 @@ def apply_bayesian_stdp(
         biases (torch.tensor): Updated biases
     """
 
-    # (output_count)
-    out_dims = output_spikes.dim()
-    total_out_spikes = output_spikes if out_dims == 1 \
-        else output_spikes.sum(dim=tuple(range(out_dims - 1)))
+    time_steps = input_psp.shape[0]
 
-    with Timer('dw_db'):
-        # STDP weight update
+    if time_batch_size == 1:
+        iterations = time_steps
+
+        input_psps_batched = input_psp
+        output_spikes_batched = output_spikes
+    else:
+        iterations = time_steps // time_batch_size
+
+        input_psps_batched = torch.stack(input_psp.chunk(iterations, dim=0), dim=0)
+        output_spikes_batched = torch.stack(output_spikes.chunk(iterations, dim=0), dim=0)
+
+    out_dims = output_spikes_batched.dim()
+
+    # (iterations, ..., output_count)
+    total_out_spikes = output_spikes_batched
+
+    for i in range(1, out_dims - 1):
+        total_out_spikes = output_spikes_batched.sum(dim=i)
+
+    # STDP weight update
+
+    spike_correlations = torch.einsum('t...o,t...i->toi', output_spikes_batched, input_psps_batched)
+    total_out_spikes_sum = total_out_spikes.sum(dim=1)  # Precompute any() result
+
+    for i in range(iterations):
         # only applies to active neuron
-        dw = torch.einsum('...o,...i->oi', output_spikes, input_psp) * c * torch.exp(-weights) - total_out_spikes[:, None]
-        # dw = torch.sum(torch.matmul(output_spikes[..., None], input_psp[..., None, :]), TODO) * c * torch.exp(-weights) - total_out_spikes[:, None]
+        dw = spike_correlations[i] * c * torch.exp(-weights) - total_out_spikes[i, :, None]
 
         # applies to all neurons (if at least one fired)
-        db = (torch.exp(-biases) * total_out_spikes - 1) * total_out_spikes.any()
+        db = (torch.exp(-biases) * total_out_spikes[i] - 1) * total_out_spikes_sum[i]
 
-    weights = weights + mu_weights * dw
-    biases = biases + mu_bias * db
+        weights += mu_weights * dw
+        biases += mu_bias * db
 
     return weights, biases
