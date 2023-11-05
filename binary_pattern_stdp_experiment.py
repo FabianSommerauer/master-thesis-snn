@@ -36,8 +36,8 @@ pattern_sparsity = 0.5
 binary_train = BinaryPatternDataset(num_patterns, num_repeats_train, pattern_length, pattern_sparsity, seed=seed)
 binary_test = BinaryPatternDataset(num_patterns, num_repeats_test, pattern_length, pattern_sparsity, seed=seed)
 
-train_loader = DataLoader(binary_train, batch_size=batch_size, shuffle=True)
-test_loader = DataLoader(binary_test, batch_size=batch_size, shuffle=True)
+train_loader = DataLoader(binary_train, batch_size=batch_size, shuffle=False)
+test_loader = DataLoader(binary_test, batch_size=batch_size, shuffle=False)
 
 distinct_targets = binary_train.pattern_ids.unique().cpu().numpy()
 
@@ -67,7 +67,7 @@ test_encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration,
                                                       delay, dt)
 
 stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1,
-                                              base_mu=1./batch_size, base_mu_bias=0.5/batch_size,
+                                              base_mu=1., base_mu_bias=0.5,
                                               collect_history=True)
 # stdp_module = custom_stdp.BayesianSTDPAdaptive(input_neurons, output_neurons, c=1, collect_history=True)  #todo: get this to work
 
@@ -106,6 +106,7 @@ total_time_ranges = [[] for _ in range(distinct_targets.shape[0])]
 cumulative_counts_hist = []  # todo: might not need this
 cross_entropy_hist = []
 cross_entropy_paper_hist = []
+time_step_hist = []
 
 # training loop
 offset = 0
@@ -140,7 +141,7 @@ for epoch in range(num_epochs):
                 offset += data.shape[0]
 
                 with Timer('metric_printing'):
-                    if i % 10 == 0:
+                    if i % 10 == 0 or i == len(train_loader) - 1:
                         with Timer('cross_entropy'):
                             joint_probs = get_joint_probabilities_from_counts(cumulative_counts[-1])
 
@@ -149,6 +150,8 @@ for epoch in range(num_epochs):
 
                             cond_cross_entropy_paper = normalized_conditional_cross_entropy_paper(joint_probs)
                             cross_entropy_paper_hist.append(cond_cross_entropy_paper)
+
+                            time_step_hist.append(i * input_spikes.shape[0] * dt)
 
                         print(f"Epoch {epoch}, Iteration {i} \n"
                               f"Train Loss: {cond_cross_entropy:.4f}; Paper Loss: {cond_cross_entropy_paper:.4f}")
@@ -210,11 +213,14 @@ total_output_spikes = np.concatenate(total_output_spikes, axis=0)
 plt.plot(cross_entropy_hist, label='Crossentropy')
 plt.plot(cross_entropy_paper_hist, label='Paper Crossentropy')
 plt.title('Training')
-plt.xlabel('Time Step')
+plt.xlabel('Time')
 plt.ylabel('Normalized Conditional Crossentropy')
 plt.ylim([0, 1])
-plt.xticks(np.arange(0, len(cross_entropy_hist), 100. / dt),
-           [str(x) + 's' for x in np.arange(0, len(cross_entropy_hist) * dt, 100)])
+# TODO: Generalize this
+hist_records_between_steps = 20
+ticks = np.arange(0, len(cross_entropy_hist), hist_records_between_steps)
+plt.xticks(ticks,
+           [f"{x:.0f}s" for x in time_step_hist[::hist_records_between_steps]])
 plt.legend()
 plt.show()
 
