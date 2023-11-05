@@ -57,6 +57,8 @@ delay = 0.01
 input_encoding_rate = 100
 input_encoding_inactive_rate = 10
 
+stdp_time_batch_size = 10
+
 # Model setup
 train_encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration,
                                                        input_encoding_rate, input_encoding_inactive_rate,
@@ -68,6 +70,7 @@ test_encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration,
 
 stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1,
                                               base_mu=1., base_mu_bias=0.5,
+                                              time_batch_size=stdp_time_batch_size,
                                               collect_history=True)
 # stdp_module = custom_stdp.BayesianSTDPAdaptive(input_neurons, output_neurons, c=1, collect_history=True)  #todo: get this to work
 

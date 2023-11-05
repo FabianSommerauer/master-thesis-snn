@@ -67,8 +67,10 @@ presentation_duration = 0.04
 delay = 0.01
 
 # todo: experiment with different rates (maybe different rates for train and test as well)
-input_encoding_rate = 40
-input_encoding_inactive_rate = 0
+input_encoding_rate = 100
+input_encoding_inactive_rate = 10
+
+stdp_time_batch_size = 10
 
 # Model setup
 train_encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration,
@@ -79,7 +81,9 @@ test_encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration,
                                                       input_encoding_rate, input_encoding_inactive_rate,
                                                       delay, dt)
 
-stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1, base_mu=1, base_mu_bias=0.5, collect_history=True)
+stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1, base_mu=1, base_mu_bias=0.5,
+                                              time_batch_size=stdp_time_batch_size,
+                                              collect_history=True)
 # stdp_module = custom_stdp.BayesianSTDPAdaptive(input_neurons, output_neurons, c=1, collect_history=True)  #todo: get this to work
 
 # inhibition_process = OUInhibitionProcess(inhibition_increase=200, inhibition_rest=0, inhibition_tau=0.005,
@@ -90,20 +94,20 @@ stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1, base_mu=1, ba
 #                           output_neuron_cell=output_cell,
 #                           stdp_module=stdp_module, acc_states=False)
 
-output_cell = EfficientStochasticOutputNeuronCell(inhibition_args=InhibitionArgs(200, 0, 0.005),
+output_cell = EfficientStochasticOutputNeuronCell(inhibition_args=InhibitionArgs(1000, 0, 0.005),
                                                   noise_args=NoiseArgs(0, 0.005, 50),
                                                   dt=dt, collect_rates=False)
 
 model = EfficientBayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, dt),
                                    multi_step_output_neuron_cell=output_cell,
-                                   stdp_module=stdp_module, acc_states=False)
+                                   stdp_module=stdp_module, track_states=False)
 
 # Model initialization
 # todo: experiment with different initializations
-# weight_init = 1
-# bias_init = 2
-# model.linear.weight.data.fill_(weight_init)
-# model.linear.bias.data.fill_(bias_init)
+weight_init = 2
+bias_init = 2
+model.linear.weight.data.fill_(weight_init)
+model.linear.bias.data.fill_(bias_init)
 
 # Training config
 num_epochs = 1  # run for 1 epoch - each data sample is seen only once
@@ -117,6 +121,7 @@ total_time_ranges = [[] for _ in range(distinct_targets.shape[0])]
 cumulative_counts_hist = []  # todo: might not need this
 cross_entropy_hist = []
 cross_entropy_paper_hist = []
+time_step_hist = []
 
 # training loop
 offset = 0
@@ -127,37 +132,42 @@ for epoch in range(num_epochs):
             input_spikes = train_encoder(data)
 
             time_ranges = train_encoder.get_time_ranges_for_patterns(targets,
-                                                                     distinct_pattern_count=distinct_targets.shape[0])
-                                                                     #offset=offset)
+                                                                     distinct_pattern_count=distinct_targets.shape[0],
+                                                                     offset=offset)
             time_ranges_ungrouped = test_encoder.get_time_ranges(targets.shape[0], offset=offset)
 
             output_spikes, state = model(input_spikes, state=state, train=True)
 
             with Timer('metric_processing'):
                 output_spikes_np = output_spikes.cpu().numpy()
+                time_offset = train_encoder.get_time_offset(offset)
 
                 total_train_output_spikes.append(output_spikes_np)
-                # for idx, time_range in enumerate(time_ranges):
-                #     total_time_ranges[idx].extend(time_range)
+                for idx, time_range in enumerate(time_ranges):
+                    total_time_ranges[idx].extend(time_range)
+
                 with Timer('cumulative_counts'):
                     cumulative_counts = get_cumulative_counts_over_time(np.array(output_spikes_np),
                                                                         time_ranges,
                                                                         base_counts=None if i == 0 else
-                                                                        cumulative_counts[-1])
+                                                                        cumulative_counts[-1],
+                                                                        time_offset=time_offset)
                     # cumulative_counts_hist.extend(cumulative_counts)
 
                 offset += data.shape[0]
 
                 with Timer('metric_printing'):
-                    if i % 10 == 0:
+                    if i % 10 == 0 or i == len(train_loader) - 1:
                         with Timer('cross_entropy'):
                             joint_probs = get_joint_probabilities_from_counts(cumulative_counts[-1])
 
                             cond_cross_entropy = normalized_conditional_cross_entropy(joint_probs)
-                            # cross_entropy_hist.extend(cond_cross_entropy)
+                            cross_entropy_hist.append(cond_cross_entropy)
 
                             cond_cross_entropy_paper = normalized_conditional_cross_entropy_paper(joint_probs)
-                            # cross_entropy_paper_hist.extend(cond_cross_entropy_paper)
+                            cross_entropy_paper_hist.append(cond_cross_entropy_paper)
+
+                            time_step_hist.append(i * input_spikes.shape[0] * dt)
 
                         print(f"Epoch {epoch}, Iteration {i} \n"
                               f"Train Loss: {cond_cross_entropy:.4f}; Paper Loss: {cond_cross_entropy_paper:.4f}")
@@ -178,36 +188,56 @@ output_cell.rate_tracker.reset()
 model.state_metric.is_active = True
 model.state_metric.reset()
 
+total_time_ranges = [[] for _ in range(distinct_targets.shape[0])]
+total_input_spikes = []
+total_output_spikes = []
+
 # test loop
 total_acc = 0
+offset = 0
 for i, (data, targets) in enumerate(iter(test_loader)):
     data = rearrange(data, 'b c w h -> b (c w h)')
     input_spikes = test_encoder(data)
+    total_input_spikes.append(input_spikes.cpu().numpy())
 
     targets_np = targets.cpu().numpy()
     time_ranges = test_encoder.get_time_ranges_for_patterns(targets_np,
-                                                            distinct_pattern_count=distinct_targets.shape[0])
+                                                            distinct_pattern_count=distinct_targets.shape[0],
+                                                            offset=offset)
     time_ranges_ungrouped = test_encoder.get_time_ranges(targets_np.shape[0])
+
+    for idx, time_range in enumerate(time_ranges):
+        total_time_ranges[idx].extend(time_range)
 
     # todo: we reset the state for every batch here, should we?
     output_spikes, _ = model(input_spikes, state=None, train=False)
+    total_output_spikes.append(output_spikes.cpu().numpy())
 
-    preds = get_predictions(output_spikes, time_ranges, neuron_mapping)
+    preds = get_predictions(output_spikes.cpu().numpy(), time_ranges_ungrouped, neuron_mapping)
     total_acc += np.mean(preds == targets_np)
+
+    offset += data.shape[0]
 
 print(f"Test Accuracy: {total_acc / len(test_loader) * 100:.4f}%")
 
 # TODO: detailed evaluation; plot weights; plot bias; plot firing rates; plot stdp; plot log probabilities; plot conditional crossentropy;
 # TODO: plot accuracy over training based on final pattern mapping
 
-plt.plot(cross_entropy_hist)
-plt.plot(cross_entropy_paper_hist)
+total_input_spikes = np.concatenate(total_input_spikes, axis=0)
+total_output_spikes = np.concatenate(total_output_spikes, axis=0)
+
+plt.plot(cross_entropy_hist, label='Crossentropy')
+plt.plot(cross_entropy_paper_hist, label='Paper Crossentropy')
 plt.title('Training')
-plt.xlabel('Time Step')
+plt.xlabel('Time')
 plt.ylabel('Normalized Conditional Crossentropy')
 plt.ylim([0, 1])
-plt.xticks(np.arange(0, len(cross_entropy_hist), 100. / dt),
-           [str(x) + 's' for x in np.arange(0, len(cross_entropy_hist) * dt, 100)])
+
+# TODO: generalize this
+hist_records_between_steps = 40
+plt.xticks(np.arange(0, len(cross_entropy_hist), hist_records_between_steps),
+           [f"{x:.0f}s" for x in time_step_hist[::hist_records_between_steps]])
+plt.legend()
 plt.show()
 
 model.state_metric.plot()
@@ -221,9 +251,9 @@ plt.figure(figsize=(10, 7))
 
 plt.subplot(3, 1, 1)
 first_ax = plt.gca()
-spikes = [input_spikes[:, i].cpu().numpy() for i in range(input_spikes.shape[1])]
+spikes = [total_input_spikes[:, i] for i in range(total_input_spikes.shape[1])]
 # raster_plot(plt.gca(), spikes)
-raster_plot_multi_color(plt.gca(), spikes, time_ranges, group_colors)
+raster_plot_multi_color(plt.gca(), spikes, total_time_ranges, group_colors)
 plt.title('Input Spikes')
 plt.xlabel('Time Step')
 plt.ylabel('Neuron')
@@ -231,8 +261,8 @@ plt.ylabel('Neuron')
 # Plot output spikes using a raster plot
 plt.subplot(3, 1, 2)
 plt.gca().sharex(first_ax)
-spikes = [output_spikes[:, i].cpu().numpy() for i in range(output_spikes.shape[1])]
-raster_plot_multi_color(plt.gca(), spikes, time_ranges, group_colors, default_color='black',
+spikes = [total_output_spikes[:, i] for i in range(total_output_spikes.shape[1])]
+raster_plot_multi_color(plt.gca(), spikes, total_time_ranges, group_colors, default_color='black',
                         allowed_colors_per_train=allowed_colors)
 # raster_plot_multi_color(spikes, plt.gca(), get_color_picker(("red", "green", "blue"), test_data_time_ranges))
 plt.title('Output Spikes')
