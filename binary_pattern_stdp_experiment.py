@@ -67,7 +67,7 @@ test_encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration,
                                                       delay, dt)
 
 stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1,
-                                              base_mu=1./batch_size, base_mu_bias=0.5/batch_size,
+                                              base_mu=1., base_mu_bias=0.5,
                                               collect_history=True)
 # stdp_module = custom_stdp.BayesianSTDPAdaptive(input_neurons, output_neurons, c=1, collect_history=True)  #todo: get this to work
 
@@ -217,7 +217,7 @@ plt.xlabel('Time')
 plt.ylabel('Normalized Conditional Crossentropy')
 plt.ylim([0, 1])
 # TODO: Generalize this
-hist_records_between_steps = 20
+hist_records_between_steps = 40
 ticks = np.arange(0, len(cross_entropy_hist), hist_records_between_steps)
 plt.xticks(ticks,
            [f"{x:.0f}s" for x in time_step_hist[::hist_records_between_steps]])
