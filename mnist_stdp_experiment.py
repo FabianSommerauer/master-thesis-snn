@@ -9,7 +9,7 @@ import custom_stdp
 from my_spike_modules import *
 from my_utils import spike_in_range, get_neuron_pattern_mapping, get_predictions, get_joint_probabilities_over_time, \
     normalized_conditional_cross_entropy, normalized_conditional_cross_entropy_paper, get_cumulative_counts_over_time, \
-    get_joint_probabilities_from_counts
+    get_joint_probabilities_from_counts, reorder_dataset_by_targets
 from my_plot_utils import raster_plot, raster_plot_multi_color, raster_plot_multi_color_per_train
 from my_timing_utils import Timer
 
@@ -49,8 +49,20 @@ transform = transforms.Compose([
 mnist_train = datasets.MNIST(data_path, train=True, download=True, transform=transform)
 mnist_test = datasets.MNIST(data_path, train=False, download=True, transform=transform)
 
-train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=True)
-test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=True)
+# Reorder by targets
+mnist_train.data, mnist_train.targets = reorder_dataset_by_targets(mnist_train.data, mnist_train.targets)
+mnist_test.data, mnist_test.targets = reorder_dataset_by_targets(mnist_test.data, mnist_test.targets)
+
+# Reduce to subset
+mnist_train.data = mnist_train.data[:20000]
+mnist_train.targets = mnist_train.targets[:20000]
+mnist_test.data = mnist_train.data[:20]
+mnist_test.targets = mnist_train.targets[:20]
+
+
+# Create data loaders
+train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=False)
+test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=False)
 
 distinct_targets = mnist_train.targets.unique().cpu().numpy()
 
@@ -68,7 +80,7 @@ delay = 0.01
 
 # todo: experiment with different rates (maybe different rates for train and test as well)
 input_encoding_rate = 100
-input_encoding_inactive_rate = 10
+input_encoding_inactive_rate = 0
 
 stdp_time_batch_size = 10
 
@@ -140,7 +152,7 @@ for epoch in range(num_epochs):
 
             with Timer('metric_processing'):
                 output_spikes_np = output_spikes.cpu().numpy()
-                time_offset = train_encoder.get_time_offset(offset)
+                time_offset = train_encoder.get_time_for_offset(offset)
 
                 total_train_output_spikes.append(output_spikes_np)
                 for idx, time_range in enumerate(time_ranges):
@@ -149,7 +161,7 @@ for epoch in range(num_epochs):
                 with Timer('cumulative_counts'):
                     cumulative_counts = get_cumulative_counts_over_time(np.array(output_spikes_np),
                                                                         time_ranges,
-                                                                        base_counts=None if i == 0 else
+                                                                        base_counts=None if epoch == 0 and i == 0 else
                                                                         cumulative_counts[-1],
                                                                         time_offset=time_offset)
                     # cumulative_counts_hist.extend(cumulative_counts)
@@ -167,7 +179,7 @@ for epoch in range(num_epochs):
                             cond_cross_entropy_paper = normalized_conditional_cross_entropy_paper(joint_probs)
                             cross_entropy_paper_hist.append(cond_cross_entropy_paper)
 
-                            time_step_hist.append(i * input_spikes.shape[0] * dt)
+                            time_step_hist.append(offset * dt)
 
                         print(f"Epoch {epoch}, Iteration {i} \n"
                               f"Train Loss: {cond_cross_entropy:.4f}; Paper Loss: {cond_cross_entropy_paper:.4f}")

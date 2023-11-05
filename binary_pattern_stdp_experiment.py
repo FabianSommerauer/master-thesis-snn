@@ -29,8 +29,8 @@ batch_size = 1
 num_patterns = 10
 num_repeats_train = 500
 num_repeats_test = 4
-pattern_length = 150
-pattern_sparsity = 0.5
+pattern_length = 300
+pattern_sparsity = 0.3
 
 # Load data
 binary_train = BinaryPatternDataset(num_patterns, num_repeats_train, pattern_length, pattern_sparsity, seed=seed)

@@ -332,7 +332,7 @@ class EfficientStochasticOutputNeuronCell(nn.Module):
             noise = filter_response_over_time(noise_rand, self.noise_filter)
 
         with Timer('rate_calc'):
-            log_rates_wo_inhibition = inputs + noise
+            log_rates_wo_inhibition = inputs + noise  # todo: for large amount of input neurons the inputs cause too much inhibition -> adjust noise or remove inputs
             relative_input_rates = torch.exp(inputs - torch.logsumexp(inputs, dim=-1, keepdim=True))
 
             # more numerically stable to utilize log

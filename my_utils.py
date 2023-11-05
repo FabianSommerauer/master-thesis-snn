@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 
 def spike_in_range(spike_times, time_ranges):
@@ -261,3 +262,28 @@ def get_input_likelihood(weights, biases, input_psp, input_groups, c=1.):
 def moving_avg(arr, len, axis):
     filt = np.ones(len) / len
     return np.apply_along_axis(lambda m: np.convolve(m, filt, mode='valid'), axis=axis, arr=arr)
+
+
+def reorder_dataset_by_targets(data, targets):
+    data_per_target = []
+
+    unique_targets = targets.unique()
+    target_counts = torch.zeros(unique_targets.shape)
+
+    for i in unique_targets:
+        mask = (targets == i)
+        data_per_target.append(data[mask])
+        target_counts[i] = mask.sum()
+
+    ordered_data = []
+    ordered_targets = []
+    for k in range(int(target_counts.max())):
+        for i in range(unique_targets.shape[0]):
+            if k < target_counts[i]:
+                ordered_data.append(data_per_target[i][k])
+                ordered_targets.append(unique_targets[i])
+
+    ordered_data = torch.stack(ordered_data)
+    ordered_targets = torch.stack(ordered_targets)
+
+    return ordered_data, ordered_targets
