@@ -28,26 +28,18 @@ class BayesianSTDPClassic(nn.Module):
 
     def forward(self, input_psp: torch.Tensor, output_spikes: torch.Tensor,
                 weights: torch.Tensor, biases: torch.Tensor):
-        with torch.no_grad():
-            with Timer('mu_update'):
+        with (torch.no_grad()):
+            with Timer('apply_bayesian_stdp'):
+                new_weights, new_biases, self.N_k = \
+                    apply_bayesian_stdp_with_learning_rate_update(input_psp, output_spikes,
+                                                                  weights, biases,
+                                                                  self.base_mu, self.base_mu_bias, self.N_k,
+                                                                  self.c, self.time_batch_size)
+
+            with Timer('track_learning_rates'):
                 mu_w = self.base_mu / self.N_k
                 mu_b = self.base_mu_bias / torch.sum(self.N_k, dim=0)
 
-            with Timer('apply_bayesian_stdp'):
-                new_weights, new_biases = apply_bayesian_stdp(input_psp, output_spikes, weights, biases,
-                                                              mu_w, mu_b, self.c, self.time_batch_size)
-
-            with Timer('counter_update'):
-                # (output_count)
-                out_dims = output_spikes.dim()
-                if out_dims == 1:
-                    total_out_spikes = output_spikes
-                else:
-                    total_out_spikes = torch.sum(output_spikes, tuple(range(out_dims - 1)))
-
-                self.N_k += total_out_spikes[:, None]
-
-            with Timer('track_learning_rates'):
                 # collect learning rates for plotting
                 self.learning_rates_tracker.update(mu_w, mu_b)
                 pass
@@ -153,6 +145,7 @@ def apply_bayesian_stdp(
         mu_weights (torch.Tensor): learning rates for the weights
         mu_bias (torch.Tensor): learning rates for the bias
         c (float): constant determining shift of final weights
+        time_batch_size (int): number of time steps to process at once (should not contain too many distinct output spikes)
     Output:
         weights (torch.tensor): Updated weights
         biases (torch.tensor): Updated biases
@@ -195,3 +188,77 @@ def apply_bayesian_stdp(
         biases += mu_bias * db
 
     return weights, biases
+
+
+@torch.jit.script
+def apply_bayesian_stdp_with_learning_rate_update(
+        input_psp: torch.Tensor,
+        output_spikes: torch.Tensor,
+        weights: torch.Tensor,
+        biases: torch.Tensor,
+        base_mu_weights: float,
+        base_mu_bias: float,
+        N_k: torch.Tensor,
+        c: float = 1,
+        time_batch_size: int = 10,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """STDP step for bayesian computation.
+    Input:
+        input_psp (torch.Tensor): Postsynaptic potential induced by each input neuron during single time step; shape: (time, ..., input_count)
+        output_spikes (torch.Tensor): Spikes of the output neurons at single time step; shape: (time, ..., output_count)
+        weights (torch.Tensor): Weight tensor of linear layer connecting pre- and postsynaptic layers; shape: (output_count, input_count)
+        biases (torch.Tensor): Bias tensor of linear layer connecting pre- and postsynaptic layers; shape: (output_count)
+        base_mu_weights (torch.Tensor): base learning rates for the weights
+        base_mu_bias (torch.Tensor): base learning rates for the bias
+        N_k (torch.Tensor): number of spikes per output neuron
+        c (float): constant determining shift of final weights
+        time_batch_size (int): number of time steps to process at once (should not contain too many distinct output spikes)
+    Output:
+        weights (torch.tensor): Updated weights
+        biases (torch.tensor): Updated biases
+    """
+
+    time_steps = input_psp.shape[0]
+
+    if time_batch_size == 1:
+        iterations = time_steps
+
+        input_psps_batched = input_psp
+        output_spikes_batched = output_spikes
+    else:
+        iterations = time_steps // time_batch_size
+
+        input_psps_batched = torch.stack(input_psp.chunk(iterations, dim=0), dim=0)
+        output_spikes_batched = torch.stack(output_spikes.chunk(iterations, dim=0), dim=0)
+
+    out_dims = output_spikes_batched.dim()
+
+    # (iterations, ..., output_count)
+    total_out_spikes = output_spikes_batched
+
+    for i in range(1, out_dims - 1):
+        total_out_spikes = output_spikes_batched.sum(dim=i)
+
+    # STDP weight update
+
+    spike_correlations = torch.einsum('t...o,t...i->toi', output_spikes_batched, input_psps_batched)
+    total_out_spikes_sum = total_out_spikes.sum(dim=1)  # Precompute any() result
+
+    for i in range(iterations):
+        mu_weights = base_mu_weights / N_k
+        mu_bias = base_mu_bias / torch.sum(N_k, dim=0)
+
+        # only applies to active neuron
+        dw = spike_correlations[i] * c * torch.exp(-weights) - total_out_spikes[i, :, None]
+
+        # applies to all neurons (if at least one fired)
+        db = (torch.exp(-biases) * total_out_spikes[i] - 1) * total_out_spikes_sum[i]
+
+        weights += mu_weights * dw
+        biases += mu_bias * db
+
+        # update counter
+        N_k += total_out_spikes[i, :, None]
+
+
+    return weights, biases, N_k

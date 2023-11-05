@@ -19,7 +19,7 @@ torch.set_grad_enabled(False)
 # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 # Set seed (todo: test with different seeds)
-seed = 4446
+seed = 44001
 random.seed(seed)
 _ = torch.manual_seed(seed)
 np.random.seed(seed)
@@ -29,7 +29,7 @@ batch_size = 1
 num_patterns = 10
 num_repeats_train = 500
 num_repeats_test = 4
-pattern_length = 100
+pattern_length = 150
 pattern_sparsity = 0.5
 
 # Load data
