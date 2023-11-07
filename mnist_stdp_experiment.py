@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from torchvision import transforms, datasets
@@ -294,10 +295,16 @@ print(model.linear.bias)
 
 stdp_module.learning_rates_tracker.plot()
 
-# todo: add tracker for weights / biases
-# todo: plots of bias convergence to log probabilities (use differently sized signals)
+# visualize bias convergence
+model.weight_tracker.plot_bias_convergence(target_biases=[np.log(1./output_neurons) for _ in range(output_neurons)],
+                                           colors=neuron_colors)
+
+# visualize normalized exponential of weights in appropriate grid (10x10 for 100 output neurons)
+grid_width = np.ceil(np.sqrt(output_neurons))
+grid_height = np.floor(output_neurons / grid_width)
+model.weight_tracker.plot_final_weight_visualization((grid_width, grid_height), (width, height))
+
 
 # todo: investigate resistance to overlapping patterns and requirement for sparseness
 
-# todo: add background oscillations
 # todo: add avg data log likelihood & conditional crossentropy measures over time

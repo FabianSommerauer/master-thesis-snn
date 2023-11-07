@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 from torch import Tensor
-from my_metrics import SpikeRateTracker, InhibitionStateTracker
+from my_metrics import SpikeRateTracker, InhibitionStateTracker, WeightsTracker
 from my_timing_utils import measure_time, Timer
 
 
@@ -297,8 +297,17 @@ class NoiseArgs:
     noise_sigma: float
 
 
+@dataclass
+class BackgroundOscillationArgs:
+    osc_amplitude: float
+    osc_freq: float
+    osc_phase: float
+
+
 class EfficientStochasticOutputNeuronCell(nn.Module):
-    def __init__(self, inhibition_args: InhibitionArgs, noise_args: NoiseArgs, dt=0.001, collect_rates=False):
+    def __init__(self, inhibition_args: InhibitionArgs, noise_args: NoiseArgs,
+                 background_oscillation_args: BackgroundOscillationArgs = None,
+                 dt=0.001, collect_rates=False):
         super(EfficientStochasticOutputNeuronCell, self).__init__()
 
         self.inhibition_args = inhibition_args
@@ -315,6 +324,12 @@ class EfficientStochasticOutputNeuronCell(nn.Module):
         self.inhibition_increase = self.inhibition_args.inhibition_increase
         self.inhibition_factor = np.exp(-self.dt / self.inhibition_args.inhibition_tau)
 
+        if background_oscillation_args is not None:
+            self.background_oscillation_active = True
+            self.background_oscillation_amplitude = self.background_oscillation_args.osc_amplitude
+            self.background_oscillation_freq = self.background_oscillation_args.osc_freq
+            self.background_oscillation_phase = self.background_oscillation_args.osc_phase
+
     @measure_time
     def forward(self, inputs, state=None):
         with Timer('inhibition'):
@@ -325,14 +340,28 @@ class EfficientStochasticOutputNeuronCell(nn.Module):
 
             if state is None:
                 last_inhibition = torch.zeros(1, dtype=inputs.dtype, device=inputs.device)
+                last_phase = self.background_oscillation_phase
             if state is not None:
-                last_inhibition, last_noise = state
+                if self.background_oscillation_active:
+                    last_inhibition, last_noise, last_phase = state
+                else:
+                    last_inhibition, last_noise = state
                 noise_rand[0] += last_noise
 
             noise = filter_response_over_time(noise_rand, self.noise_filter)
 
+        with Timer('background_oscillation'):
+            if self.background_oscillation_active:
+                osc = self.background_oscillation_amplitude * torch.sin(
+                    self.background_oscillation_freq * torch.arange(0, inputs.shape[0]) * self.dt
+                    + last_phase)
+                next_phase = last_phase + self.background_oscillation_freq * inputs.shape[0] * self.dt
+
         with Timer('rate_calc'):
             log_rates_wo_inhibition = inputs + noise  # todo: for large amount of input neurons the inputs cause too much inhibition -> adjust noise or remove inputs
+            if self.background_oscillation_active:
+                log_rates_wo_inhibition += osc
+
             relative_input_rates = torch.exp(inputs - torch.logsumexp(inputs, dim=-1, keepdim=True))
 
             # more numerically stable to utilize log
@@ -369,7 +398,10 @@ class EfficientStochasticOutputNeuronCell(nn.Module):
             # collect rates for plotting
             self.rate_tracker.update(relative_input_rates, log_rates)
 
-        states = (inhibition, noise[..., 0])
+        if self.background_oscillation_active:
+            states = (inhibition, noise[..., 0], next_phase)
+        else:
+            states = (inhibition, noise[..., 0])
 
         return out_spikes, states
 
@@ -404,6 +436,7 @@ class EfficientBayesianSTDPModel(nn.Module):
 
         self.input_psp = input_psp
         self.state_metric = InhibitionStateTracker(is_active=track_states, is_batched=True)
+        self.weight_tracker = WeightsTracker(is_active=track_states)
 
         self.stdp_module = stdp_module
 
@@ -430,6 +463,9 @@ class EfficientBayesianSTDPModel(nn.Module):
                                                                self.linear.bias.data)
                     self.linear.weight.data = new_weights
                     self.linear.bias.data = new_biases
+
+                    # collect weights for plotting
+                    self.weight_tracker.update(new_weights, new_biases)
 
             last_state = (z_states[0][-1], z_states[1][-1])
 

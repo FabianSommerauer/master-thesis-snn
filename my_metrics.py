@@ -188,18 +188,55 @@ class WeightsTracker:
         self.bias_history.append(biases)
 
     def compute(self):
+        if not self.is_active:
+            return None, None
+
+        if len(self.weights_history) == 0 or len(self.bias_history) == 0:
+            return None, None
+
         return torch.stack(self.weights_history), torch.stack(self.bias_history)
 
     def reset(self):
         self.weights_history = []
         self.bias_history = []
 
-    def plot_biases_exp(self):
+    def plot_bias_convergence(self, target_biases=None, colors=None):
         weights_history, bias_history = self.compute()
 
         bias_exp = torch.exp(bias_history)
+        bias_exp = bias_exp.cpu().numpy()
 
         for i in range(bias_exp.shape[-1]):
-            plt.plot(bias_exp[:, i], label=f'bias {i}')
+            plt.plot(bias_exp[:, i], label=f'exp(bias_{i})', color=colors[i] if colors is not None else None)
+        if target_biases is not None:
+            for i in range(target_biases.shape[-1]):
+                tgt = target_biases[i]
+                plt.axhline(tgt, color=colors[i] if colors is not None else None, linestyle='--',
+                            label=f'target bias {i}')
+
+        plt.title('Bias convergence')
         plt.legend()
         plt.show()
+
+    def plot_final_weight_visualization(self, grid_size, image_size):
+        width, height = image_size
+        grid_width, grid_height = grid_size
+
+        weights_history, bias_history = self.compute()
+
+        weights = weights_history[-1]
+        weights_exp = torch.exp(weights)
+        weights_exp = weights_exp.cpu().numpy()
+
+        weight_count = weights_exp.shape[1]
+
+        fig, axs = plt.subplots(grid_height, grid_width)
+        for i in range(grid_height):
+            for j in range(grid_width):
+                ax = axs[i, j]
+                if i * grid_width + j >= weight_count:
+                    ax.axis('off')
+                    continue
+
+                ax.imshow(weights_exp[:, i * grid_width + j].reshape(height, width))
+                ax.axis('off')
