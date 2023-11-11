@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from deprecation import deprecated
 from einops import rearrange
 from torch import Tensor
 from my_trackers import SpikeRateTracker, InhibitionStateTracker, WeightsTracker
@@ -120,7 +121,7 @@ def filter_response_over_time(data: Tensor, filter: Tensor):
     return torch.reshape(result, shape)
 
 
-# todo: if this is just an object it wont be serialized properly (maybe module?)
+@deprecated(details="This functionality has moved into EfficientStochasticOutputNeuronCell")
 class OUInhibitionProcess(object):
     def __init__(self, inhibition_increase=3000, inhibition_rest=500, inhibition_tau=0.005,
                  noise_rest=1000, noise_tau=0.005, noise_sigma=50, dt=0.001):
@@ -170,6 +171,7 @@ def efficient_multinomial(r):
     return (r.cumsum(-1) >= torch.rand(r.shape[:-1])[..., None]).byte().argmax(-1)
 
 
+@deprecated(details="Use EfficientStochasticOutputNeuronCell instead.")
 class StochasticOutputNeuronCell(nn.Module):
     def __init__(self, inhibition_process: OUInhibitionProcess, dt=0.001, collect_rates=False):
         super(StochasticOutputNeuronCell, self).__init__()
@@ -224,6 +226,7 @@ class StochasticOutputNeuronCell(nn.Module):
         return out_spikes, inhibition_state
 
 
+@deprecated(details="Use EfficientBayesianSTDPModel instead")
 class BayesianSTDPModel(nn.Module):
     def __init__(self, input_neuron_cnt, output_neuron_cnt,
                  input_psp, output_neuron_cell,
