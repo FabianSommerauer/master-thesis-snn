@@ -61,6 +61,26 @@ def get_predictions(output_spikes, time_ranges, pattern_mapping):
     return predictions
 
 
+def get_predictions_from_rates(output_rates, time_ranges, pattern_mapping):
+    """Get predictions by finding most responsive output neuron in each time range
+    Most responsive neuron is determined by comparing the averaged rates within each timeframe
+    """
+    time_range_count = len(time_ranges)
+    time_step_count, output_neuron_num = output_rates.shape
+
+    predictions = np.ones((time_range_count,)) * -1.
+
+    for range_idx, (range_start, range_end) in enumerate(time_ranges):
+        start_idx = max(range_start, 0)
+        end_idx = min(range_end, time_step_count - 1)
+        avg_rates = np.mean(output_rates[start_idx:end_idx], axis=0)
+
+        max_neuron = np.argmax(avg_rates)
+        predictions[range_idx] = pattern_mapping[max_neuron]
+
+    return predictions
+
+
 def get_cumulative_counts_over_time(output_spikes, time_ranges_per_pattern, base_counts=None, time_offset=0.0):
     """Get cumulative counts of output neuron firing over time
 

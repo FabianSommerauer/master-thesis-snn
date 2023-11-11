@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 from torch import Tensor
-from my_metrics import SpikeRateTracker, InhibitionStateTracker, WeightsTracker
+from my_trackers import SpikeRateTracker, InhibitionStateTracker, WeightsTracker
 from my_timing_utils import measure_time, Timer
 
 

@@ -181,6 +181,7 @@ total_output_spikes = []
 
 # test loop
 total_acc = 0
+total_miss = 0
 offset = 0
 for i, (data, targets) in enumerate(iter(test_loader)):
     input_spikes = test_encoder(data)
@@ -201,10 +202,12 @@ for i, (data, targets) in enumerate(iter(test_loader)):
 
     preds = get_predictions(output_spikes.cpu().numpy(), time_ranges_ungrouped, neuron_mapping)
     total_acc += np.mean(preds == targets_np)
+    total_miss += np.mean(preds == -1)
 
     offset += data.shape[0]
 
 print(f"Test Accuracy: {total_acc / len(test_loader) * 100:.4f}%")
+print(f"Test Missing Prediction Rate: {total_miss / len(test_loader) * 100:.4f}%")
 
 # TODO: detailed evaluation; plot weights; plot bias; plot firing rates; plot stdp; plot log probabilities; plot conditional crossentropy;
 # TODO: plot accuracy over training based on final pattern mapping
@@ -276,3 +279,5 @@ stdp_module.learning_rates_tracker.plot()
 
 # todo: add background oscillations
 # todo: add avg data log likelihood & conditional crossentropy measures over time
+
+# TODO: INVESTIGATE WHETHER BACKGROUND OSCILLATION REALLY HELPS OR JUST ALLEVIATES EXTREME INHIBITION
