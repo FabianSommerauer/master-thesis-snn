@@ -240,8 +240,12 @@ def apply_bayesian_stdp_with_adaptive_learning_rate_update(
         c: float = 1,
         time_batch_size: int = 10,):
     """STDP step for bayesian computation with adaptive learning rates. Uses variance tracking.
-    Allows for more accurately processing large batches of time steps."""
+    Allows for more accurately processing large batches of time steps.
+
+    TODO: ARGS
+    """
     time_steps = input_psp.shape[0]
+    output_neuron_count, input_neuron_count = weights.shape
 
     if time_batch_size == 1:
         iterations = time_steps
@@ -269,12 +273,12 @@ def apply_bayesian_stdp_with_adaptive_learning_rate_update(
 
     if learning_rate_state is None:
         mu_weights = torch.ones_like(weights) * base_mu_weights
-        weight_first_moment = torch.ones_like(weights)  # todo
-        weight_second_moment = torch.ones_like(weights)
+        weight_first_moment = torch.ones_like(weights) * torch.log(1./input_neuron_count)
+        weight_second_moment = torch.ones_like(weights) * 2 + weight_first_moment**2
 
         mu_bias = torch.ones_like(biases) * base_mu_bias
-        bias_first_moment = torch.ones_like(biases)
-        bias_second_moment = torch.ones_like(biases)
+        bias_first_moment = torch.ones_like(biases) * torch.log(1./output_neuron_count)
+        bias_second_moment = torch.ones_like(biases) * 2 + bias_first_moment**2
     else:
         mu_weights, weight_first_moment, weight_second_moment, \
             mu_bias, bias_first_moment, bias_second_moment = learning_rate_state

@@ -329,9 +329,11 @@ class EfficientStochasticOutputNeuronCell(nn.Module):
 
         if background_oscillation_args is not None:
             self.background_oscillation_active = True
-            self.background_oscillation_amplitude = self.background_oscillation_args.osc_amplitude
-            self.background_oscillation_freq = self.background_oscillation_args.osc_freq
-            self.background_oscillation_phase = self.background_oscillation_args.osc_phase
+            self.background_oscillation_amplitude = background_oscillation_args.osc_amplitude
+            self.background_oscillation_freq = background_oscillation_args.osc_freq
+            self.background_oscillation_phase = background_oscillation_args.osc_phase
+        else:
+            self.background_oscillation_active = False
 
     @measure_time
     def forward(self, inputs, state=None):
@@ -343,7 +345,9 @@ class EfficientStochasticOutputNeuronCell(nn.Module):
 
             if state is None:
                 last_inhibition = torch.zeros(1, dtype=inputs.dtype, device=inputs.device)
-                last_phase = self.background_oscillation_phase
+
+                if self.background_oscillation_active:
+                    last_phase = self.background_oscillation_phase
             if state is not None:
                 if self.background_oscillation_active:
                     last_inhibition, last_noise, last_phase = state
@@ -355,15 +359,13 @@ class EfficientStochasticOutputNeuronCell(nn.Module):
 
         with Timer('background_oscillation'):
             if self.background_oscillation_active:
-                osc = self.background_oscillation_amplitude * torch.sin(
-                    self.background_oscillation_freq * torch.arange(0, inputs.shape[0]) * self.dt
-                    + last_phase)
-                next_phase = last_phase + self.background_oscillation_freq * inputs.shape[0] * self.dt
+                phase = self.background_oscillation_freq * torch.arange(1, inputs.shape[0] + 1) * self.dt + last_phase
+                osc = self.background_oscillation_amplitude * torch.sin(phase)
 
         with Timer('rate_calc'):
             log_rates_wo_inhibition = inputs + noise  # todo: for large amount of input neurons the inputs cause too much inhibition -> adjust noise or remove inputs
             if self.background_oscillation_active:
-                log_rates_wo_inhibition += osc
+                log_rates_wo_inhibition += osc[:, None]
 
             relative_input_rates = torch.exp(inputs - torch.logsumexp(inputs, dim=-1, keepdim=True))
 
@@ -402,7 +404,7 @@ class EfficientStochasticOutputNeuronCell(nn.Module):
             self.rate_tracker.update(relative_input_rates, log_rates)
 
         if self.background_oscillation_active:
-            states = (inhibition, noise[..., 0], next_phase)
+            states = (inhibition, noise[..., 0], phase)
         else:
             states = (inhibition, noise[..., 0])
 
@@ -457,7 +459,7 @@ class EfficientBayesianSTDPModel(nn.Module):
 
             with Timer('state_metric'):
                 # collect inhibition/noise states for plotting
-                self.state_metric.update(z_states)
+                self.state_metric.update((z_states[0], z_states[1]))
 
             if train:
                 with Timer('stdp'):
@@ -470,6 +472,6 @@ class EfficientBayesianSTDPModel(nn.Module):
                     # collect weights for plotting
                     self.weight_tracker.update(new_weights, new_biases)
 
-            last_state = (z_states[0][-1], z_states[1][-1])
+            last_state = [state[-1] for state in z_states]
 
             return z_out, last_state
