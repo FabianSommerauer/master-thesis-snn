@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from enum import Enum
 
 import norse.torch as norse
 import numpy as np
@@ -307,10 +308,17 @@ class BackgroundOscillationArgs:
     osc_phase: float
 
 
+class LogFiringRateCalculationMode(Enum):
+    Default = 0  # inputs + noise - inhibition
+    IgnoreInputs = 1  # noise - inhibition
+    ExpectedInputCorrected = 2  # inputs - mean(inputs) + noise - inhibition
+
+
 class EfficientStochasticOutputNeuronCell(nn.Module):
     def __init__(self, inhibition_args: InhibitionArgs, noise_args: NoiseArgs,
                  background_oscillation_args: BackgroundOscillationArgs = None,
-                 dt=0.001, collect_rates=False):
+                 dt=0.001, log_firing_rate_calc_mode=LogFiringRateCalculationMode.Default,
+                 collect_rates=False):
         super(EfficientStochasticOutputNeuronCell, self).__init__()
 
         self.inhibition_args = inhibition_args
@@ -326,6 +334,8 @@ class EfficientStochasticOutputNeuronCell(nn.Module):
         self.inhibition_rest = self.inhibition_args.inhibition_rest
         self.inhibition_increase = self.inhibition_args.inhibition_increase
         self.inhibition_factor = np.exp(-self.dt / self.inhibition_args.inhibition_tau)
+
+        self.log_firing_rate_calc_mode = log_firing_rate_calc_mode
 
         if background_oscillation_args is not None:
             self.background_oscillation_active = True
@@ -363,7 +373,15 @@ class EfficientStochasticOutputNeuronCell(nn.Module):
                 osc = self.background_oscillation_amplitude * torch.sin(phase)
 
         with Timer('rate_calc'):
-            log_rates_wo_inhibition = inputs + noise  # todo: for large amount of input neurons the inputs cause too much inhibition -> adjust noise or remove inputs
+            match self.log_firing_rate_calc_mode:
+                case LogFiringRateCalculationMode.Default:
+                    log_rates_wo_inhibition = inputs + noise
+                case LogFiringRateCalculationMode.IgnoreInputs:
+                    # equivalent to using inputs - torch.logsumexp(inputs, dim=-1, keepdim=True) + noise
+                    log_rates_wo_inhibition = noise
+                case LogFiringRateCalculationMode.ExpectedInputCorrected:
+                    log_rates_wo_inhibition = inputs - torch.mean(inputs, dim=-1, keepdim=True) + noise
+
             if self.background_oscillation_active:
                 log_rates_wo_inhibition += osc[:, None]
 
@@ -401,7 +419,7 @@ class EfficientStochasticOutputNeuronCell(nn.Module):
             log_rates = log_rates_wo_inhibition - inhibition[..., None]
 
             # collect rates for plotting
-            self.rate_tracker.update(relative_input_rates, log_rates)
+            self.rate_tracker.update(relative_input_rates.clone().detach(), log_rates.clone().detach())
 
         if self.background_oscillation_active:
             states = (inhibition, noise[..., 0], phase)
@@ -470,7 +488,7 @@ class EfficientBayesianSTDPModel(nn.Module):
                     self.linear.bias.data = new_biases
 
                     # collect weights for plotting
-                    self.weight_tracker.update(new_weights, new_biases)
+                    self.weight_tracker.update(new_weights.clone().detach(), new_biases.clone().detach())
 
             last_state = [state[-1] for state in z_states]
 

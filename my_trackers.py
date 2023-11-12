@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from torchmetrics import metric
 import matplotlib.pyplot as plt
@@ -200,17 +201,24 @@ class WeightsTracker:
         self.weights_history = []
         self.bias_history = []
 
-    def plot_bias_convergence(self, target_biases=None, colors=None):
+    def plot_bias_convergence(self, target_biases=None, colors=None, exp=True):
         weights_history, bias_history = self.compute()
 
-        bias_exp = torch.exp(bias_history)
-        bias_exp = bias_exp.cpu().numpy()
+        if weights_history is None or bias_history is None:
+            return
 
-        for i in range(bias_exp.shape[-1]):
-            plt.plot(bias_exp[:, i], label=f'exp(bias_{i})', color=colors[i] if colors is not None else None)
+        if exp:
+            bias_history = torch.exp(bias_history)
+        bias_history = bias_history.cpu().numpy()
+
+        for i in range(bias_history.shape[-1]):
+            label = f'exp(bias_{i})' if exp else f'bias_{i}'
+            plt.plot(bias_history[:, i], label=label, color=colors[i] if colors is not None else None)
         if target_biases is not None:
-            for i in range(target_biases.shape[-1]):
+            for i in range(len(target_biases)):
                 tgt = target_biases[i]
+                if exp:
+                    tgt = np.exp(tgt)
                 plt.axhline(tgt, color=colors[i] if colors is not None else None, linestyle='--',
                             label=f'target bias {i}')
 
@@ -218,25 +226,29 @@ class WeightsTracker:
         plt.legend()
         plt.show()
 
-    def plot_final_weight_visualization(self, grid_size, image_size):
+    def plot_final_weight_visualization(self, grid_size, image_size, stride=2, offset=0, exp=True):
         width, height = image_size
         grid_width, grid_height = grid_size
+
+        width, height, grid_width, grid_height = int(width), int(height), int(grid_width), int(grid_height)
 
         weights_history, bias_history = self.compute()
 
         weights = weights_history[-1]
-        weights_exp = torch.exp(weights)
-        weights_exp = weights_exp.cpu().numpy()
+        if exp:
+            weights = torch.exp(weights)
+        weights = weights.cpu().numpy()
 
-        weight_count = weights_exp.shape[1]
+        weight_count = weights.shape[1]
 
         fig, axs = plt.subplots(grid_height, grid_width)
         for i in range(grid_height):
             for j in range(grid_width):
                 ax = axs[i, j]
+                ax.axis('off')
                 if i * grid_width + j >= weight_count:
-                    ax.axis('off')
                     continue
 
-                ax.imshow(weights_exp[:, i * grid_width + j].reshape(height, width))
-                ax.axis('off')
+                ax.imshow(weights[i * grid_width + j, offset::stride].reshape(height, width))
+
+        plt.show()

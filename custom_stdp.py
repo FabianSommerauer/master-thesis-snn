@@ -242,7 +242,25 @@ def apply_bayesian_stdp_with_adaptive_learning_rate_update(
     """STDP step for bayesian computation with adaptive learning rates. Uses variance tracking.
     Allows for more accurately processing large batches of time steps.
 
-    TODO: ARGS
+    Input:
+        input_psp (torch.Tensor): Postsynaptic potential induced by each input neuron during single time step; shape: (time, ..., input_count)
+        output_spikes (torch.Tensor): Spikes of the output neurons at single time step; shape: (time, ..., output_count)
+        weights (torch.Tensor): Weight tensor of linear layer connecting pre- and postsynaptic layers; shape: (output_count, input_count)
+        biases (torch.Tensor): Bias tensor of linear layer connecting pre- and postsynaptic layers; shape: (output_count)
+        base_mu_weights (torch.Tensor): base learning rates for the weights
+        base_mu_bias (torch.Tensor): base learning rates for the bias
+        learning_rate_state (Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]):
+            state of the learning rates (mu_weights, weight_first_moment, weight_second_moment,
+                                        mu_bias, bias_first_moment, bias_second_moment) from previous time step
+            None if this is the first time step
+        c (float): constant determining shift of final weights
+        time_batch_size (int): number of time steps to process at once (should not contain too many distinct output spikes)
+    Output:
+        weights (torch.tensor): Updated weights
+        biases (torch.tensor): Updated biases
+        learning_rate_state (Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]):
+            state of the learning rates (mu_weights, weight_first_moment, weight_second_moment,
+                                        mu_bias, bias_first_moment, bias_second_moment) for next time step
     """
     time_steps = input_psp.shape[0]
     output_neuron_count, input_neuron_count = weights.shape

@@ -94,7 +94,7 @@ test_encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration,
                                                       input_encoding_rate, input_encoding_inactive_rate,
                                                       delay, dt)
 
-stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1, base_mu=1, base_mu_bias=0.5,
+stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1, base_mu=1, base_mu_bias=1,
                                               time_batch_size=stdp_time_batch_size,
                                               collect_history=True)
 # stdp_module = custom_stdp.BayesianSTDPAdaptive(input_neurons, output_neurons, c=1, collect_history=True)  #todo: get this to work
@@ -109,18 +109,20 @@ stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1, base_mu=1, ba
 
 output_cell = EfficientStochasticOutputNeuronCell(inhibition_args=InhibitionArgs(1000, 0, 0.005),
                                                   noise_args=NoiseArgs(0, 0.005, 50),
+                                                  background_oscillation_args=BackgroundOscillationArgs(50, 20, 0),
+                                                  log_firing_rate_calc_mode=LogFiringRateCalculationMode.ExpectedInputCorrected,
                                                   dt=dt, collect_rates=False)
 
 model = EfficientBayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, dt),
                                    multi_step_output_neuron_cell=output_cell,
-                                   stdp_module=stdp_module, track_states=False)
+                                   stdp_module=stdp_module, track_states=True)
 
 # Model initialization
 # todo: experiment with different initializations
-weight_init = 2
-bias_init = 2
-model.linear.weight.data.fill_(weight_init)
-model.linear.bias.data.fill_(bias_init)
+# weight_init = 1
+# bias_init = 1
+# model.linear.weight.data.fill_(weight_init)
+# model.linear.bias.data.fill_(bias_init)
 
 # Training config
 num_epochs = 1  # run for 1 epoch - each data sample is seen only once
@@ -297,7 +299,7 @@ stdp_module.learning_rates_tracker.plot()
 
 # visualize bias convergence
 model.weight_tracker.plot_bias_convergence(target_biases=[np.log(1./output_neurons) for _ in range(output_neurons)],
-                                           colors=neuron_colors)
+                                           colors=neuron_colors, exp=False)
 
 # visualize normalized exponential of weights in appropriate grid (10x10 for 100 output neurons)
 grid_width = np.ceil(np.sqrt(output_neurons))
