@@ -59,11 +59,11 @@ class SpikePopulationGroupEncoder(nn.Module):
         rates = (1 - neuron_active) * self.inactive_rate + neuron_active * self.active_rate
 
         if rate_modulation is not None:
-            rates[None, ...] *= rate_modulation[..., None]
+            rates = rates[None, ...] * rate_modulation[..., None, None]
 
         encoded = (torch.rand(
             self.seq_length,
-            *rates.shape,
+            *neuron_active.shape,
             device=rates.device
         ).float() < self.dt * rates).float()
         return encoded
@@ -88,18 +88,27 @@ class SpikePopulationGroupBatchToTimeEncoder(nn.Module):
     def forward(self, input_values: Tensor, start_phase: Tensor = None) -> tuple[Tensor, Tensor] | Tensor:
         if self.background_oscillation_active:
             phase = self.background_oscillation_freq * torch.arange(self.seq_length) * self.dt
-            if start_phase is not None:
-                phase += start_phase
 
             batch_offsets = (torch.arange(input_values.shape[0], device=input_values.device)
                              * self.get_shift_between_patterns() * self.dt
                              * self.background_oscillation_freq)
 
             phase = phase[..., None] + batch_offsets[None, ...]
-            rate_modulation = self.background_oscillation_amplitude * (1 + torch.sin(phase))
 
             next_start_phase = (self.get_shift_between_patterns() * input_values.shape[0] * self.dt
-                                * self.background_oscillation_freq) + start_phase
+                                * self.background_oscillation_freq)
+
+            phase *= 2*torch.pi
+            next_start_phase *= 2*torch.pi
+
+            if start_phase is not None:
+                phase += start_phase
+                next_start_phase += start_phase
+            else:
+                phase += self.background_oscillation_phase
+                next_start_phase += self.background_oscillation_phase
+
+            rate_modulation = self.background_oscillation_amplitude * (1 + torch.sin(phase))
         else:
             rate_modulation = None
             next_start_phase = None
@@ -114,9 +123,7 @@ class SpikePopulationGroupBatchToTimeEncoder(nn.Module):
             dim=0)
         combined = rearrange(padded, 't b ... i n -> (b t) ... (i n)')
 
-        if self.background_oscillation_active:
-            return combined, next_start_phase
-        return combined
+        return combined, next_start_phase
 
     @measure_time
     def get_time_ranges(self, pattern_count, epsilon=1e-7, offset=0):
@@ -409,7 +416,8 @@ class EfficientStochasticOutputNeuronCell(nn.Module):
 
         with Timer('background_oscillation'):
             if self.background_oscillation_active:
-                phase = self.background_oscillation_freq * torch.arange(1, inputs.shape[0] + 1) * self.dt + last_phase
+                phase = (self.background_oscillation_freq * torch.arange(1, inputs.shape[0] + 1)
+                         * self.dt * 2 * torch.pi) + last_phase
                 osc = self.background_oscillation_amplitude * torch.sin(phase)
 
         with Timer('rate_calc'):

@@ -47,6 +47,15 @@ binary_input_variable_cnt = pat_len
 input_neurons = binary_input_variable_cnt * 2
 output_neurons = distinct_targets.shape[0]
 
+background_oscillations = True
+
+if background_oscillations:
+    output_osc_args = BackgroundOscillationArgs(50, 20, -torch.pi/2)
+    input_osc_args = BackgroundOscillationArgs(1, 20, -torch.pi/2)
+else:
+    output_osc_args = None
+    input_osc_args = None
+
 dt = 0.001
 sigma = 0.005
 
@@ -54,19 +63,21 @@ presentation_duration = 0.04
 delay = 0.01
 
 # todo: experiment with different rates (maybe different rates for train and test as well)
-input_encoding_rate = 100
-input_encoding_inactive_rate = 10
+input_encoding_rate = 30
+input_encoding_inactive_rate = 5
 
 stdp_time_batch_size = 10
 
 # Model setup
 train_encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration,
                                                        input_encoding_rate, input_encoding_inactive_rate,
-                                                       delay, dt)
+                                                       delay, dt,
+                                                       background_oscillation_args=input_osc_args)
 
 test_encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration,
                                                       input_encoding_rate, input_encoding_inactive_rate,
-                                                      delay, dt)
+                                                      delay, dt,
+                                                      background_oscillation_args=input_osc_args)
 
 stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1,
                                               base_mu=1., base_mu_bias=0.5,
@@ -82,10 +93,10 @@ stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1,
 #                           output_neuron_cell=output_cell,
 #                           stdp_module=stdp_module, acc_states=False)
 
-output_cell = EfficientStochasticOutputNeuronCell(inhibition_args=InhibitionArgs(1000, 0, 0.005),
+output_cell = EfficientStochasticOutputNeuronCell(inhibition_args=InhibitionArgs(1000, 200, 0.005),
                                                   noise_args=NoiseArgs(0, 0.005, 50),
                                                   log_firing_rate_calc_mode=LogFiringRateCalculationMode.ExpectedInputCorrected,
-                                                  # background_oscillation_args=BackgroundOscillationArgs(50, 20, 0),
+                                                  background_oscillation_args=output_osc_args,
                                                   dt=dt, collect_rates=False)
 
 model = EfficientBayesianSTDPModel(input_neurons, output_neurons, BinaryTimedPSP(sigma, dt),
@@ -115,10 +126,11 @@ time_step_hist = []
 
 # training loop
 offset = 0
+osc_phase = None
 for epoch in range(num_epochs):
     for i, (data, targets) in enumerate(iter(train_loader)):
         with Timer('training loop'):
-            input_spikes = train_encoder(data)
+            input_spikes, osc_phase = train_encoder(data, osc_phase)
 
             time_ranges = train_encoder.get_time_ranges_for_patterns(targets,
                                                                      distinct_pattern_count=distinct_targets.shape[0],
@@ -186,7 +198,7 @@ total_acc = 0
 total_miss = 0
 offset = 0
 for i, (data, targets) in enumerate(iter(test_loader)):
-    input_spikes = test_encoder(data)
+    input_spikes, osc_phase = test_encoder(data, osc_phase)
     total_input_spikes.append(input_spikes.cpu().numpy())
 
     targets_np = targets.cpu().numpy()
