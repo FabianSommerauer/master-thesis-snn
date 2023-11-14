@@ -1,4 +1,4 @@
-from typing import Literal, Tuple
+from typing import Literal, Tuple, Optional
 import torch
 import torch.nn as nn
 from my_trackers import LearningRatesTracker
@@ -75,13 +75,13 @@ class BayesianSTDPAdaptive(nn.Module):
             new_weights, new_biases, self.lr_state = apply_bayesian_stdp_with_adaptive_learning_rate_update(
                 input_psp, output_spikes,
                 weights, biases,
-                1., 1.,  # todo
+                1e-2, 1e-2,  # todo
                 self.lr_state, self.c,
                 self.time_batch_size)
 
             mu_w, _, _, mu_b, _, _ = self.lr_state
             # collect learning rates for plotting
-            self.learning_rates_tracker.update(self.mu_w, self.mu_b)
+            self.learning_rates_tracker.update(mu_w, mu_b)
 
             return new_weights, new_biases
 
@@ -235,8 +235,8 @@ def apply_bayesian_stdp_with_adaptive_learning_rate_update(
         biases: torch.Tensor,
         base_mu_weights: float,
         base_mu_bias: float,
-        learning_rate_state: Tuple[torch.Tensor, torch.Tensor, torch.Tensor,
-                                   torch.Tensor, torch.Tensor, torch.Tensor],
+        learning_rate_state: Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor,
+                                   torch.Tensor, torch.Tensor, torch.Tensor]] = None,
         c: float = 1,
         time_batch_size: int = 10,):
     """STDP step for bayesian computation with adaptive learning rates. Uses variance tracking.
@@ -291,12 +291,12 @@ def apply_bayesian_stdp_with_adaptive_learning_rate_update(
 
     if learning_rate_state is None:
         mu_weights = torch.ones_like(weights) * base_mu_weights
-        weight_first_moment = torch.ones_like(weights) * torch.log(1./input_neuron_count)
-        weight_second_moment = torch.ones_like(weights) * 2 + weight_first_moment**2
+        weight_first_moment = torch.ones_like(weights) # * torch.log(torch.tensor(1./input_neuron_count))
+        weight_second_moment = torch.ones_like(weights) * 2 # + weight_first_moment**2
 
         mu_bias = torch.ones_like(biases) * base_mu_bias
-        bias_first_moment = torch.ones_like(biases) * torch.log(1./output_neuron_count)
-        bias_second_moment = torch.ones_like(biases) * 2 + bias_first_moment**2
+        bias_first_moment = torch.ones_like(biases) # * torch.log(torch.tensor(1./output_neuron_count))
+        bias_second_moment = torch.ones_like(biases) * 2 # + bias_first_moment**2
     else:
         mu_weights, weight_first_moment, weight_second_moment, \
             mu_bias, bias_first_moment, bias_second_moment = learning_rate_state

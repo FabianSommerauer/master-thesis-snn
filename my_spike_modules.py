@@ -98,8 +98,8 @@ class SpikePopulationGroupBatchToTimeEncoder(nn.Module):
             next_start_phase = (self.get_shift_between_patterns() * input_values.shape[0] * self.dt
                                 * self.background_oscillation_freq)
 
-            phase *= 2*torch.pi
-            next_start_phase *= 2*torch.pi
+            phase *= 2 * torch.pi
+            next_start_phase *= 2 * torch.pi
 
             if start_phase is not None:
                 phase += start_phase

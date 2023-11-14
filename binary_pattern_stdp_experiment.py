@@ -79,11 +79,13 @@ test_encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration,
                                                       delay, dt,
                                                       background_oscillation_args=input_osc_args)
 
-stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1,
-                                              base_mu=1., base_mu_bias=0.5,
-                                              time_batch_size=stdp_time_batch_size,
-                                              collect_history=True)
-# stdp_module = custom_stdp.BayesianSTDPAdaptive(input_neurons, output_neurons, c=1, collect_history=True)  #todo: get this to work
+# stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1,
+                                             # base_mu=1., base_mu_bias=0.5,
+                                             # time_batch_size=stdp_time_batch_size,
+                                             # collect_history=True)
+stdp_module = custom_stdp.BayesianSTDPAdaptive(input_neurons, output_neurons,
+                                               time_batch_size=stdp_time_batch_size,
+                                               c=1, collect_history=True)  #todo: get this to work
 
 # inhibition_process = OUInhibitionProcess(inhibition_increase=1000, inhibition_rest=0, inhibition_tau=0.005,
 #                                          noise_rest=0, noise_tau=0.005, noise_sigma=50, dt=dt)
