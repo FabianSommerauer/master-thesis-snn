@@ -84,6 +84,7 @@ stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1,
 
 output_cell = EfficientStochasticOutputNeuronCell(inhibition_args=InhibitionArgs(1000, 0, 0.005),
                                                   noise_args=NoiseArgs(0, 0.005, 50),
+                                                  log_firing_rate_calc_mode=LogFiringRateCalculationMode.ExpectedInputCorrected,
                                                   # background_oscillation_args=BackgroundOscillationArgs(50, 20, 0),
                                                   dt=dt, collect_rates=False)
 

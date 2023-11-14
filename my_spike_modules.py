@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
+from typing import Tuple, Any
 
 import norse.torch as norse
 import numpy as np
@@ -13,6 +14,33 @@ from my_trackers import SpikeRateTracker, InhibitionStateTracker, WeightsTracker
 from my_timing_utils import measure_time, Timer
 
 
+@dataclass
+class InhibitionArgs:
+    inhibition_increase: float
+    inhibition_rest: float
+    inhibition_tau: float
+
+
+@dataclass
+class NoiseArgs:
+    noise_rest: float
+    noise_tau: float
+    noise_sigma: float
+
+
+@dataclass
+class BackgroundOscillationArgs:
+    osc_amplitude: float
+    osc_freq: float
+    osc_phase: float
+
+
+class LogFiringRateCalculationMode(Enum):
+    Default = 0  # inputs + noise - inhibition
+    IgnoreInputs = 1  # noise - inhibition
+    ExpectedInputCorrected = 2  # inputs - mean(inputs) + noise - inhibition
+
+
 # todo: check whether torch.no_grad() or detach() is needed in classes below
 
 class SpikePopulationGroupEncoder(nn.Module):
@@ -20,30 +48,64 @@ class SpikePopulationGroupEncoder(nn.Module):
         super().__init__()
 
         self.seq_length = seq_length
-        self.encoder = norse.PoissonEncoder(seq_length, f_max=active_rate, dt=dt)
-        self.inactive_factor = inactive_rate / active_rate
+        self.active_rate = active_rate
+        self.inactive_rate = inactive_rate
+        self.dt = dt
 
-    def forward(self, input_values: Tensor) -> Tensor:
+    def forward(self, input_values: Tensor, rate_modulation: Tensor = None) -> Tensor:
         # assumes input values within [0,1] (ideally binary)
         neuron_active = torch.stack((input_values, (1 - input_values)), dim=-1)
 
-        relative_rates = (1 - self.inactive_factor) * neuron_active + self.inactive_factor
+        rates = (1 - neuron_active) * self.inactive_rate + neuron_active * self.active_rate
 
-        encoded = self.encoder(relative_rates)
+        if rate_modulation is not None:
+            rates[None, ...] *= rate_modulation[..., None]
+
+        encoded = (torch.rand(
+            self.seq_length,
+            *rates.shape,
+            device=rates.device
+        ).float() < self.dt * rates).float()
         return encoded
 
 
 class SpikePopulationGroupBatchToTimeEncoder(nn.Module):
-    def __init__(self, presentation_duration=0.1, active_rate=100, inactive_rate=0.0, delay=0.01, dt=0.001):
+    def __init__(self, presentation_duration=0.1, active_rate=100, inactive_rate=0.0, delay=0.01, dt=0.001,
+                 background_oscillation_args: BackgroundOscillationArgs = None):
         super().__init__()
-        seq_length = int(presentation_duration / dt)
-        self.base_encoder = SpikePopulationGroupEncoder(seq_length, active_rate, inactive_rate, dt)
+        self.dt = dt
+        self.seq_length = int(presentation_duration / dt)
+        self.base_encoder = SpikePopulationGroupEncoder(self.seq_length, active_rate, inactive_rate, dt)
         self.delay_shift = int(delay / dt)
 
+        self.background_oscillation_active = background_oscillation_args is not None
+        if self.background_oscillation_active:
+            self.background_oscillation_amplitude = background_oscillation_args.osc_amplitude
+            self.background_oscillation_freq = background_oscillation_args.osc_freq
+            self.background_oscillation_phase = background_oscillation_args.osc_phase
+
     @measure_time
-    def forward(self, input_values: Tensor) -> Tensor:
+    def forward(self, input_values: Tensor, start_phase: Tensor = None) -> tuple[Tensor, Tensor] | Tensor:
+        if self.background_oscillation_active:
+            phase = self.background_oscillation_freq * torch.arange(self.seq_length) * self.dt
+            if start_phase is not None:
+                phase += start_phase
+
+            batch_offsets = (torch.arange(input_values.shape[0], device=input_values.device)
+                             * self.get_shift_between_patterns() * self.dt
+                             * self.background_oscillation_freq)
+
+            phase = phase[..., None] + batch_offsets[None, ...]
+            rate_modulation = self.background_oscillation_amplitude * (1 + torch.sin(phase))
+
+            next_start_phase = (self.get_shift_between_patterns() * input_values.shape[0] * self.dt
+                                * self.background_oscillation_freq) + start_phase
+        else:
+            rate_modulation = None
+            next_start_phase = None
+
         # shape (time, batch, input_values, neurons_per_input = 2)
-        encoded = self.base_encoder(input_values)
+        encoded = self.base_encoder(input_values, rate_modulation)
 
         # move batch dimension into time dimension (concat with delay); during delay no spikes are emitted
         # also concat all neurons within timestep into single dimension
@@ -51,20 +113,23 @@ class SpikePopulationGroupBatchToTimeEncoder(nn.Module):
             (encoded, torch.zeros(self.delay_shift, *encoded.shape[1:], device=encoded.device, dtype=encoded.dtype)),
             dim=0)
         combined = rearrange(padded, 't b ... i n -> (b t) ... (i n)')
+
+        if self.background_oscillation_active:
+            return combined, next_start_phase
         return combined
 
     @measure_time
-    def get_time_ranges(self, pattern_count, epsilon=1e-5, offset=0):
-        total_len = self.base_encoder.seq_length + self.delay_shift
-        # todo: check with epsilon
+    def get_time_ranges(self, pattern_count, epsilon=1e-7, offset=0):
+        total_len = self.seq_length + self.delay_shift
+
         time_ranges = [((i + offset) * total_len - epsilon,
-                        (i + offset) * total_len + self.base_encoder.seq_length + epsilon)
+                        (i + offset) * total_len + self.seq_length + epsilon)
                        for i in range(pattern_count)]
 
         return time_ranges
 
     @measure_time
-    def get_time_ranges_for_patterns(self, pattern_order, distinct_pattern_count=None, epsilon=1e-5, offset=0):
+    def get_time_ranges_for_patterns(self, pattern_order, distinct_pattern_count=None, epsilon=1e-7, offset=0):
         time_ranges = self.get_time_ranges(len(pattern_order), epsilon, offset)
 
         if distinct_pattern_count is None:
@@ -76,7 +141,10 @@ class SpikePopulationGroupBatchToTimeEncoder(nn.Module):
         return grouped_time_ranges
 
     def get_time_for_offset(self, offset):
-        return offset * (self.base_encoder.seq_length + self.delay_shift)
+        return offset * (self.seq_length + self.delay_shift)
+
+    def get_shift_between_patterns(self):
+        return self.seq_length + self.delay_shift
 
 
 class BinaryTimedPSP(nn.Module):
@@ -285,34 +353,6 @@ class BayesianSTDPModel(nn.Module):
 
 
 # Efficient implementations of the above classes
-
-
-@dataclass
-class InhibitionArgs:
-    inhibition_increase: float
-    inhibition_rest: float
-    inhibition_tau: float
-
-
-@dataclass
-class NoiseArgs:
-    noise_rest: float
-    noise_tau: float
-    noise_sigma: float
-
-
-@dataclass
-class BackgroundOscillationArgs:
-    osc_amplitude: float
-    osc_freq: float
-    osc_phase: float
-
-
-class LogFiringRateCalculationMode(Enum):
-    Default = 0  # inputs + noise - inhibition
-    IgnoreInputs = 1  # noise - inhibition
-    ExpectedInputCorrected = 2  # inputs - mean(inputs) + noise - inhibition
-
 
 class EfficientStochasticOutputNeuronCell(nn.Module):
     def __init__(self, inhibition_args: InhibitionArgs, noise_args: NoiseArgs,
