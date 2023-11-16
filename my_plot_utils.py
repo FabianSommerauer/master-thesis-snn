@@ -1,4 +1,6 @@
 import numpy as np
+from matplotlib import ticker
+
 from my_utils import spike_in_range
 
 
@@ -35,6 +37,7 @@ def raster_plot_multi_color(ax, spikes, time_ranges_per_color, colors, default_c
         else:
             eventplot_time_range_colored(ax, spike_coords, time_ranges_per_color, colors, default_color=default_color,
                                          lineoffsets=i, linelengths=0.7)
+    ax.yaxis.set_major_formatter(ticker.StrMethodFormatter("{x:.0f}"))
 
 
 def raster_plot_multi_color_per_train(ax, spikes, time_ranges_per_color_per_train, colors, default_color='black'):
@@ -45,3 +48,4 @@ def raster_plot_multi_color_per_train(ax, spikes, time_ranges_per_color_per_trai
 
         eventplot_time_range_colored(ax, spike_coords, time_ranges_per_color, colors, default_color=default_color,
                                      lineoffsets=i, linelengths=0.7)
+    ax.yaxis.set_major_formatter(ticker.StrMethodFormatter("{x:.0f}"))

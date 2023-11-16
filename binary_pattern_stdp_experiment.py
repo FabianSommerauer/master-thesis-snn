@@ -30,7 +30,7 @@ num_patterns = 10
 num_repeats_train = 500
 num_repeats_test = 4
 pattern_length = 300
-pattern_sparsity = 0.3
+pattern_sparsity = 0.5
 
 # Load data
 binary_train = BinaryPatternDataset(num_patterns, num_repeats_train, pattern_length, pattern_sparsity, seed=seed)
@@ -49,6 +49,7 @@ output_neurons = distinct_targets.shape[0]
 
 background_oscillations = True
 
+# TODO: find out why input oscillations don't work / don't improve performance
 if background_oscillations:
     output_osc_args = BackgroundOscillationArgs(50, 20, -torch.pi/2)
     input_osc_args = BackgroundOscillationArgs(1, 20, -torch.pi/2)
@@ -79,13 +80,13 @@ test_encoder = SpikePopulationGroupBatchToTimeEncoder(presentation_duration,
                                                       delay, dt,
                                                       background_oscillation_args=input_osc_args)
 
-# stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1,
-                                             # base_mu=1., base_mu_bias=0.5,
-                                             # time_batch_size=stdp_time_batch_size,
-                                             # collect_history=True)
-stdp_module = custom_stdp.BayesianSTDPAdaptive(input_neurons, output_neurons,
-                                               time_batch_size=stdp_time_batch_size,
-                                               c=1, collect_history=True)  #todo: get this to work
+stdp_module = custom_stdp.BayesianSTDPClassic(output_neurons, c=1,
+                                             base_mu=1., base_mu_bias=0.5,
+                                             time_batch_size=stdp_time_batch_size,
+                                             collect_history=True)
+# stdp_module = custom_stdp.BayesianSTDPAdaptive(input_neurons, output_neurons,
+#                                                time_batch_size=stdp_time_batch_size,
+#                                                c=1, collect_history=True)  #todo: get this to work
 
 # inhibition_process = OUInhibitionProcess(inhibition_increase=1000, inhibition_rest=0, inhibition_tau=0.005,
 #                                          noise_rest=0, noise_tau=0.005, noise_sigma=50, dt=dt)
@@ -95,7 +96,7 @@ stdp_module = custom_stdp.BayesianSTDPAdaptive(input_neurons, output_neurons,
 #                           output_neuron_cell=output_cell,
 #                           stdp_module=stdp_module, acc_states=False)
 
-output_cell = EfficientStochasticOutputNeuronCell(inhibition_args=InhibitionArgs(1000, 200, 0.005),
+output_cell = EfficientStochasticOutputNeuronCell(inhibition_args=InhibitionArgs(1000, 0, 0.005),
                                                   noise_args=NoiseArgs(0, 0.005, 50),
                                                   log_firing_rate_calc_mode=LogFiringRateCalculationMode.ExpectedInputCorrected,
                                                   background_oscillation_args=output_osc_args,
@@ -199,6 +200,8 @@ total_output_spikes = []
 total_acc = 0
 total_miss = 0
 offset = 0
+osc_phase = None
+state = None
 for i, (data, targets) in enumerate(iter(test_loader)):
     input_spikes, osc_phase = test_encoder(data, osc_phase)
     total_input_spikes.append(input_spikes.cpu().numpy())
@@ -212,8 +215,7 @@ for i, (data, targets) in enumerate(iter(test_loader)):
     for idx, time_range in enumerate(time_ranges):
         total_time_ranges[idx].extend(time_range)
 
-    # todo: we reset the state for every batch here, should we?
-    output_spikes, _ = model(input_spikes, state=None, train=False)
+    output_spikes, state = model(input_spikes, state=state, train=False)
     total_output_spikes.append(output_spikes.cpu().numpy())
 
     preds = get_predictions(output_spikes.cpu().numpy(), time_ranges_ungrouped, neuron_mapping)

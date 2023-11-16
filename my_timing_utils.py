@@ -99,5 +99,14 @@ class Timer:
 
     @classmethod
     def print(cls):
+        print(cls)
+
+    @classmethod
+    def __str__(cls):
         cls.global_ctx.duration = cls.global_ctx._child_duration()
-        print(cls.global_ctx)
+        return str(cls.global_ctx)
+
+    @classmethod
+    def reset(cls):
+        cls.global_ctx = TimingContext("global")
+        cls.current_ctx = cls.global_ctx

@@ -12,6 +12,7 @@ def spike_in_range(spike_times, time_ranges):
 
 # TODO: this is not efficient
 # TODO: this allows multiple neurons to be mapped to the same pattern
+# TODO: this could also be done using cumulative counts
 def get_neuron_pattern_mapping(output_spikes, pattern_time_ranges):
     """Map each output neuron to the pattern that it fires most frequently to."""
     neuron_pattern_mapping = []
@@ -235,6 +236,8 @@ def grouped_sum(array, groups):
     Args:
         array: array to sum [shape arbitrary]
         groups: group indices [shape same as array]
+    Output:
+        grouped_sums: grouped sums [shape same as array]
     """
 
     grouped_sums = np.zeros(array.shape)
@@ -257,6 +260,8 @@ def get_input_likelihood(weights, biases, input_psp, input_groups, c=1.):
         input_psp: input psp; values assumed to be 0 or 1; should be grouped with each group always having exactly 1 active neuron [shape (..., input)]
         input_groups: group idx of each input (used to appropriately normalize weights) [shape (input,)]
         c: constant used to during learning (default: 1.)
+    Output:
+        total_input_likelihood: total likelihood of input spikes [shape (...,)]
     """
 
     # todo: deal with input_psps where multiple neurons in each group may be active at once and which aren't binary
