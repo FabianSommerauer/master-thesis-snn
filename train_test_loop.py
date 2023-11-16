@@ -5,7 +5,6 @@ import numpy as np
 import torch
 
 import custom_stdp
-from binary_pattern_stdp_experiment import output_osc_args, input_osc_args
 from my_spike_modules import BinaryTimedPSP, EfficientBayesianSTDPModel, LogFiringRateCalculationMode, NoiseArgs, \
     InhibitionArgs, EfficientStochasticOutputNeuronCell, SpikePopulationGroupBatchToTimeEncoder, \
     BackgroundOscillationArgs
@@ -228,19 +227,28 @@ def train(config: TrainConfig, data_loader):
 
 
 def test(config: TestConfig, data_loader):
+    model_config = config.model_config
+    stdp_config = model_config.stdp_config
+
     # Model setup
-    encoder, model = init_model(config.model_config)
+    encoder, model = init_model(model_config)
     model.linear.weight.data = config.trained_params[0]
     model.linear.bias.data = config.trained_params[1]
+
+    # Used for input likelihood calculation
+    input_groups = np.repeat(np.arange(model_config.input_neuron_count // 2), 2)
 
     # Metric tracking
     total_acc = 0
     total_acc_rate = 0
     total_miss = 0
+    confusion_matrix = np.zeros((config.distinct_target_count, config.distinct_target_count))
 
     total_output_spikes = []
     total_input_spikes = []
     total_time_ranges = [[] for _ in range(config.distinct_target_count)]
+    cumulative_counts_hist = []
+    input_likelihood_hist = []
 
     # Test loop
     offset = 0
@@ -248,34 +256,54 @@ def test(config: TestConfig, data_loader):
     state = None
     Timer.reset()
     for i, (data, targets) in enumerate(iter(data_loader)):
-        input_spikes, osc_phase = encoder(data, osc_phase)
-        total_input_spikes.append(input_spikes.cpu().numpy())
+        with Timer('test loop'):
+            input_spikes, osc_phase = encoder(data, osc_phase)
+            total_input_spikes.append(input_spikes.cpu().numpy())
 
-        targets_np = targets.cpu().numpy()
-        time_ranges = encoder.get_time_ranges_for_patterns(targets_np,
-                                                           distinct_pattern_count=config.distinct_target_count,
-                                                           offset=offset)
-        time_ranges_ungrouped = encoder.get_time_ranges(targets_np.shape[0])
+            targets_np = targets.cpu().numpy()
+            time_ranges = encoder.get_time_ranges_for_patterns(targets_np,
+                                                               distinct_pattern_count=config.distinct_target_count,
+                                                               offset=offset)
+            time_ranges_ungrouped = encoder.get_time_ranges(targets_np.shape[0])
 
-        for idx, time_range in enumerate(time_ranges):
-            total_time_ranges[idx].extend(time_range)
+            for idx, time_range in enumerate(time_ranges):
+                total_time_ranges[idx].extend(time_range)
 
-        output_spikes, state = model(input_spikes, state=state, train=False)
+            output_spikes, state, input_psp = model(input_spikes, state=state, train=False)
 
-        output_spikes_np = output_spikes.cpu().numpy()
-        total_output_spikes.append(output_spikes_np)
+            with Timer('metric_processing'):
+                output_spikes_np = output_spikes.cpu().numpy()
+                total_output_spikes.append(output_spikes_np)
 
-        normalized_rates, log_total_rates = model.output_neuron_cell.rate_tracker.compute()
-        output_rates_np = normalized_rates.cpu().numpy()
+                normalized_rates, log_total_rates = model.output_neuron_cell.rate_tracker.compute()
+                output_rates_np = normalized_rates.cpu().numpy()
 
-        pred = get_predictions(output_spikes_np, time_ranges_ungrouped, config.neuron_pattern_mapping)
-        pred_rates = get_predictions_from_rates(output_rates_np, time_ranges_ungrouped, config.neuron_pattern_mapping)
+                pred = get_predictions(output_spikes_np, time_ranges_ungrouped, config.neuron_pattern_mapping)
+                pred_rates = get_predictions_from_rates(output_rates_np, time_ranges_ungrouped,
+                                                        config.neuron_pattern_mapping)
 
-        total_acc += np.mean(pred == targets_np)
-        total_acc_rate += np.mean(pred_rates == targets_np)
-        total_miss += np.mean(pred == -1)
+                confusion_matrix += np.bincount(targets_np * config.distinct_target_count + pred,
+                                                minlength=config.distinct_target_count ** 2).reshape(
+                    (config.distinct_target_count, config.distinct_target_count))
 
-        offset += data.shape[0]
+                total_acc += np.mean(pred == targets_np)
+                total_acc_rate += np.mean(pred_rates == targets_np)
+                total_miss += np.mean(pred == -1)
+
+                with Timer('cumulative_counts'):
+                    cumulative_counts = get_cumulative_counts_over_time(np.array(output_spikes_np),
+                                                                        time_ranges,
+                                                                        base_counts=None if i == 0 else
+                                                                        cumulative_counts[-1],
+                                                                        time_offset=offset)
+                    cumulative_counts_hist.append(cumulative_counts)
+
+                with Timer('input_likelihood'):
+                    input_likelihood = get_input_likelihood(model.linear.weight, model.linear.bias,
+                                                            input_psp, input_groups, stdp_config.c)
+                    input_likelihood_hist.append(input_likelihood)
+
+            offset += data.shape[0]
 
     total_acc /= len(data_loader)
     total_acc_rate /= len(data_loader)
@@ -286,6 +314,9 @@ def test(config: TestConfig, data_loader):
     cond_cross_entropy = normalized_conditional_cross_entropy(joint_probs)
     cond_cross_entropy_paper = normalized_conditional_cross_entropy_paper(joint_probs)
 
+    input_likelihood_concat = np.concatenate(input_likelihood_hist, axis=0)
+    average_input_likelihood = np.mean(input_likelihood_concat)
+
     timing_info = str(Timer)
     Timer.reset()
 
@@ -294,5 +325,3 @@ def test(config: TestConfig, data_loader):
                        cond_cross_entropy_paper,
                        average_input_likelihood,
                        timing_info)
-
-
