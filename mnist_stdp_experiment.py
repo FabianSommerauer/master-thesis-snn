@@ -22,15 +22,6 @@ set_seed(seed)
 batch_size = 10
 data_path = '/tmp/data/mnist'
 
-
-class ToBinaryTransform(object):
-    def __init__(self, thresh):
-        self.thresh = thresh
-
-    def __call__(self, data: Tensor):
-        return (data > self.thresh).to(data.dtype)
-
-
 # Data transforms
 transform = transforms.Compose([
     transforms.Resize((28, 28)),

@@ -1,8 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import Tuple, Any
 
-import norse.torch as norse
 import numpy as np
 import torch
 import torch.nn as nn
@@ -10,8 +8,9 @@ import torch.nn.functional as F
 from deprecation import deprecated
 from einops import rearrange
 from torch import Tensor
-from my_trackers import SpikeRateTracker, InhibitionStateTracker, WeightsTracker
+
 from my_timing_utils import measure_time, Timer
+from my_trackers import SpikeRateTracker, InhibitionStateTracker, WeightsTracker
 
 
 @dataclass

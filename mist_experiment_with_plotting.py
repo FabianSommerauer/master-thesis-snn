@@ -1,12 +1,14 @@
 import numpy as np
 import torch
+from einops import rearrange
 from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader
+from torchvision import transforms, datasets
 
 from binary_pattern_dataset import BinaryPatternDataset
 from my_plot_utils import raster_plot_multi_color
 from my_spike_modules import BackgroundOscillationArgs, InhibitionArgs, NoiseArgs, LogFiringRateCalculationMode
-from my_utils import set_seed
+from my_utils import set_seed, ToBinaryTransform, reorder_dataset_by_targets, FlattenTransform
 from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellConfig, TrainConfig, train_model, \
     TestConfig, test_model
 
@@ -15,27 +17,45 @@ seed = 23
 set_seed(seed)
 
 # Data config
-batch_size = 1
-num_patterns = 10
-num_repeats_train = 500
-num_repeats_test = 4
-pattern_length = 300
-pattern_sparsity = 0.5
+batch_size = 10
+data_path = '/tmp/data/mnist'
+
+
+# Data transforms
+transform = transforms.Compose([
+    transforms.Resize((28, 28)),
+    transforms.Grayscale(),
+    transforms.ToTensor(),
+    transforms.Normalize((0,), (1,)),
+    ToBinaryTransform(0.5),  # todo: test without this
+    FlattenTransform()
+])
 
 # Load data
-binary_train = BinaryPatternDataset(num_patterns, num_repeats_train, pattern_length, pattern_sparsity, seed=seed)
-binary_test = BinaryPatternDataset(num_patterns, num_repeats_test, pattern_length, pattern_sparsity, seed=seed)
+mnist_train = datasets.MNIST(data_path, train=True, download=True, transform=transform)
+mnist_test = datasets.MNIST(data_path, train=False, download=True, transform=transform)
+_, width, height = mnist_train.data.shape
 
-train_loader = DataLoader(binary_train, batch_size=batch_size, shuffle=False)
-test_loader = DataLoader(binary_test, batch_size=batch_size, shuffle=False)
+# Reorder by targets
+mnist_train.data, mnist_train.targets = reorder_dataset_by_targets(mnist_train.data, mnist_train.targets)
+mnist_test.data, mnist_test.targets = reorder_dataset_by_targets(mnist_test.data, mnist_test.targets)
 
-distinct_targets = binary_train.pattern_ids.unique().cpu().numpy()
+# Reduce to subset (TODO: remove this later)
+mnist_train.data = mnist_train.data[:2000]
+mnist_train.targets = mnist_train.targets[:2000]
+mnist_test.data = mnist_train.data[:20]
+mnist_test.targets = mnist_train.targets[:20]
+
+# Create data loaders
+train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=False)
+test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=False)
+
+distinct_targets = mnist_train.targets.unique().cpu().numpy()
 
 # Model config
-pat_len = binary_train.patterns.shape[1]
-binary_input_variable_cnt = pat_len
+binary_input_variable_cnt = width * height
 input_neuron_count = binary_input_variable_cnt * 2
-output_neuron_count = distinct_targets.shape[0]
+output_neuron_count = 100
 
 input_osc_args = None  # TODO BackgroundOscillationArgs(1, 20, -torch.pi / 2)
 output_osc_args = BackgroundOscillationArgs(50, 20, -torch.pi / 2)
@@ -52,15 +72,15 @@ model_config = ModelConfig(
     encoder_config=EncoderConfig(
         presentation_duration=4e-2,
         delay=1e-2,
-        active_rate=30,
-        inactive_rate=5,
+        active_rate=100,
+        inactive_rate=10,
         background_oscillation_args=input_osc_args
     ),
     stdp_config=STDPConfig(
         base_mu=1.,
         base_mu_bias=0.5,
         c=1.,
-        time_batch_size=10
+        time_batch_size=20
     ),
     output_cell_config=OutputCellConfig(
         inhibition_args=inhibition_args,
@@ -69,8 +89,8 @@ model_config = ModelConfig(
         background_oscillation_args=output_osc_args,
     ),
 
-    weight_init=2.,
-    bias_init=2.
+    weight_init=None,
+    bias_init=None
 )
 
 train_config = TrainConfig(
@@ -177,6 +197,5 @@ weight_tracker.plot_bias_convergence(target_biases=[np.log(1. / output_neuron_co
 # visualize normalized exponential of weights in appropriate grid (10x10 for 100 output neurons)
 grid_width = np.ceil(np.sqrt(output_neuron_count))
 grid_height = np.ceil(output_neuron_count / grid_width)
-width = np.ceil(np.sqrt(pat_len))
-height = np.ceil(pat_len / width)
+
 weight_tracker.plot_final_weight_visualization((grid_width, grid_height), (width, height))

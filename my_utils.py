@@ -2,6 +2,8 @@ import random
 
 import numpy as np
 import torch
+from einops import rearrange
+from torch import Tensor
 
 
 def spike_in_range(spike_times, time_ranges):
@@ -106,7 +108,7 @@ def get_cumulative_counts_over_time(output_spikes, time_ranges_per_pattern, base
             continue
         time_range = np.stack(time_ranges, axis=0)
         in_range = np.any((spike_times[0][:, None] <= time_range[:, 1] - time_offset) & (
-                    spike_times[0][:, None] >= time_range[:, 0] - time_offset),
+                spike_times[0][:, None] >= time_range[:, 0] - time_offset),
                           axis=-1)
 
         counts_over_time[spike_times[0][in_range], pattern_idx, spike_times[-1][in_range]] = 1.
@@ -114,7 +116,7 @@ def get_cumulative_counts_over_time(output_spikes, time_ranges_per_pattern, base
     cumulative_counts = np.cumsum(counts_over_time, axis=0)
 
     if base_counts is not None:
-        cumulative_counts += base_counts[None,...]
+        cumulative_counts += base_counts[None, ...]
 
     return cumulative_counts
 
@@ -325,3 +327,16 @@ def set_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
+
+
+class ToBinaryTransform(object):
+    def __init__(self, thresh):
+        self.thresh = thresh
+
+    def __call__(self, data: Tensor):
+        return (data > self.thresh).to(data.dtype)
+
+
+class FlattenTransform(object):
+    def __call__(self, data: Tensor):
+        return torch.flatten(data)

@@ -323,6 +323,7 @@ def test_model(config: TestConfig, data_loader):
                                                                         time_offset=time_offset)
 
                 with Timer('input_likelihood'):
+                    # todo: do this after the loop (same for training)
                     weight_np = model.linear.weight.data.cpu().numpy()
                     bias_np = model.linear.bias.data.cpu().numpy()
                     input_psp_np = input_psp.cpu().numpy()
@@ -355,9 +356,9 @@ def test_model(config: TestConfig, data_loader):
     Timer.reset()
 
     if config.print_results:
-        print(f"Test Accuracy: {total_acc:.4f}")
-        print(f"Test Rate Accuracy: {total_acc_rate:.4f}")
-        print(f"Test Miss Rate: {total_miss:.4f}")
+        print(f"Test Accuracy: {total_acc*100:.4f}%")
+        print(f"Test Rate Accuracy: {total_acc_rate*100:.4f}%")
+        print(f"Test Miss Rate: {total_miss*100:.4f}%")
         print(f"Test Cross Entropy: {cond_cross_entropy:.4f}")
         print(f"Test Paper Cross Entropy: {cond_cross_entropy_paper:.4f}")
         print(f"Test Average Input Likelihood: {average_input_likelihood:.4f}")
