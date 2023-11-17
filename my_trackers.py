@@ -1,7 +1,8 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from torchmetrics import metric
-import matplotlib.pyplot as plt
+
+from my_plot_utils import plot_weight_visualization
 
 
 class InhibitionStateTracker:
@@ -227,28 +228,7 @@ class WeightsTracker:
         plt.show()
 
     def plot_final_weight_visualization(self, grid_size, image_size, stride=2, offset=0, exp=True):
-        width, height = image_size
-        grid_width, grid_height = grid_size
-
-        width, height, grid_width, grid_height = int(width), int(height), int(grid_width), int(grid_height)
-
         weights_history, bias_history = self.compute()
 
         weights = weights_history[-1]
-        if exp:
-            weights = torch.exp(weights)
-        weights = weights.cpu().numpy()
-
-        weight_count = weights.shape[1]
-
-        fig, axs = plt.subplots(grid_height, grid_width)
-        for i in range(grid_height):
-            for j in range(grid_width):
-                ax = axs[i, j]
-                ax.axis('off')
-                if i * grid_width + j >= weight_count:
-                    continue
-
-                ax.imshow(weights[i * grid_width + j, offset::stride].reshape(height, width))
-
-        plt.show()
+        plot_weight_visualization(weights, grid_size, image_size, stride=stride, offset=offset, exp=exp)

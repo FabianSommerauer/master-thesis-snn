@@ -507,7 +507,7 @@ class EfficientBayesianSTDPModel(nn.Module):
         self.output_neuron_cell = multi_step_output_neuron_cell
 
         self.input_psp = input_psp
-        self.state_metric = InhibitionStateTracker(is_active=track_states, is_batched=True)
+        self.inhibition_tracker = InhibitionStateTracker(is_active=track_states, is_batched=True)
         self.weight_tracker = WeightsTracker(is_active=track_states)
 
         self.stdp_module = stdp_module
@@ -528,7 +528,7 @@ class EfficientBayesianSTDPModel(nn.Module):
 
             with Timer('state_metric'):
                 # collect inhibition/noise states for plotting
-                self.state_metric.update((z_states[0], z_states[1]))
+                self.inhibition_tracker.update((z_states[0], z_states[1]))
 
             if train:
                 with Timer('stdp'):

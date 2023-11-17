@@ -1,18 +1,14 @@
 import matplotlib.pyplot as plt
-import torch
 from torch.utils.data import DataLoader
-from torchvision import transforms, datasets
-import random
-import torchmetrics
 
 import custom_stdp
 from binary_pattern_dataset import BinaryPatternDataset
+from my_plot_utils import raster_plot_multi_color
 from my_spike_modules import *
-from my_utils import spike_in_range, get_neuron_pattern_mapping, get_predictions, get_joint_probabilities_over_time, \
-    normalized_conditional_cross_entropy, normalized_conditional_cross_entropy_paper, get_cumulative_counts_over_time, \
-    get_joint_probabilities_from_counts
-from my_plot_utils import raster_plot, raster_plot_multi_color, raster_plot_multi_color_per_train
 from my_timing_utils import Timer
+from my_utils import get_neuron_pattern_mapping, get_predictions, normalized_conditional_cross_entropy, \
+    normalized_conditional_cross_entropy_paper, get_cumulative_counts_over_time, \
+    get_joint_probabilities_from_counts, set_seed
 
 torch.set_grad_enabled(False)
 
@@ -20,9 +16,7 @@ torch.set_grad_enabled(False)
 
 # Set seed (todo: test with different seeds)
 seed = 44001
-random.seed(seed)
-_ = torch.manual_seed(seed)
-np.random.seed(seed)
+set_seed(seed)
 
 # Data config
 batch_size = 1
@@ -189,8 +183,8 @@ neuron_mapping = get_neuron_pattern_mapping(total_train_output_spikes, total_tim
 
 output_cell.rate_tracker.is_active = True
 output_cell.rate_tracker.reset()
-model.state_metric.is_active = True
-model.state_metric.reset()
+model.inhibition_tracker.is_active = True
+model.inhibition_tracker.reset()
 
 total_time_ranges = [[] for _ in range(distinct_targets.shape[0])]
 total_input_spikes = []
@@ -248,7 +242,7 @@ plt.xticks(ticks,
 plt.legend()
 plt.show()
 
-model.state_metric.plot()
+model.inhibition_tracker.plot()
 
 cmap = plt.get_cmap("tab10")
 group_colors = [cmap(i) for i in range(distinct_targets.shape[0])]

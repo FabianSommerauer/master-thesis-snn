@@ -1,5 +1,6 @@
 import numpy as np
-from matplotlib import ticker
+import torch
+from matplotlib import ticker, pyplot as plt
 
 from my_utils import spike_in_range
 
@@ -49,3 +50,34 @@ def raster_plot_multi_color_per_train(ax, spikes, time_ranges_per_color_per_trai
         eventplot_time_range_colored(ax, spike_coords, time_ranges_per_color, colors, default_color=default_color,
                                      lineoffsets=i, linelengths=0.7)
     ax.yaxis.set_major_formatter(ticker.StrMethodFormatter("{x:.0f}"))
+
+
+def plot_weight_visualization(weights, grid_size, image_size, stride=2, offset=0, exp=True):
+    width, height = image_size
+    grid_width, grid_height = grid_size
+
+    width, height, grid_width, grid_height = int(width), int(height), int(grid_width), int(grid_height)
+
+    if exp:
+        weights = torch.exp(weights)
+    weights = weights.cpu().numpy()
+
+    output_neuron_count = weights.shape[0]
+
+    fig, axs = plt.subplots(grid_height, grid_width)
+    for i in range(grid_height):
+        for j in range(grid_width):
+            ax = axs[i, j]
+            ax.axis('off')
+
+            neuron_idx = i * grid_width + j
+            if neuron_idx >= output_neuron_count:
+                continue
+
+            neuron_weights = weights[neuron_idx, offset::stride]
+            if neuron_weights.shape[0] < width * height:
+                neuron_weights = np.pad(neuron_weights, (0, width * height - neuron_weights.shape[0]))
+
+            ax.imshow(neuron_weights.reshape(height, width))
+
+    plt.show()

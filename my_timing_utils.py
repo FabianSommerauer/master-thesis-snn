@@ -99,10 +99,10 @@ class Timer:
 
     @classmethod
     def print(cls):
-        print(cls)
+        print(cls.str())
 
     @classmethod
-    def __str__(cls):
+    def str(cls):
         cls.global_ctx.duration = cls.global_ctx._child_duration()
         return str(cls.global_ctx)
 

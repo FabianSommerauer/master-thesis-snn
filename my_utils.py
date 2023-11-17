@@ -1,3 +1,5 @@
+import random
+
 import numpy as np
 import torch
 
@@ -40,7 +42,7 @@ def get_predictions(output_spikes, time_ranges, pattern_mapping):
 
     spike_counts = np.zeros((output_neuron_num,))
 
-    predictions = np.ones((time_range_count,)) * -1.
+    predictions = np.ones((time_range_count,), dtype=int) * -1
 
     for range_idx, (range_start, range_end) in enumerate(time_ranges):
         for neuron_index in range(output_neuron_num):
@@ -72,8 +74,8 @@ def get_predictions_from_rates(output_rates, time_ranges, pattern_mapping):
     predictions = np.ones((time_range_count,)) * -1.
 
     for range_idx, (range_start, range_end) in enumerate(time_ranges):
-        start_idx = max(range_start, 0)
-        end_idx = min(range_end, time_step_count - 1)
+        start_idx = max(round(range_start), 0)
+        end_idx = min(round(range_end), time_step_count - 1)
         avg_rates = np.mean(output_rates[start_idx:end_idx], axis=0)
 
         max_neuron = np.argmax(avg_rates)
@@ -103,7 +105,8 @@ def get_cumulative_counts_over_time(output_spikes, time_ranges_per_pattern, base
         if len(time_ranges) == 0:
             continue
         time_range = np.stack(time_ranges, axis=0)
-        in_range = np.any((spike_times[0][:, None] <= time_range[:, 1] - time_offset) & (spike_times[0][:, None] >= time_range[:, 0] - time_offset),
+        in_range = np.any((spike_times[0][:, None] <= time_range[:, 1] - time_offset) & (
+                    spike_times[0][:, None] >= time_range[:, 0] - time_offset),
                           axis=-1)
 
         counts_over_time[spike_times[0][in_range], pattern_idx, spike_times[-1][in_range]] = 1.
@@ -111,21 +114,22 @@ def get_cumulative_counts_over_time(output_spikes, time_ranges_per_pattern, base
     cumulative_counts = np.cumsum(counts_over_time, axis=0)
 
     if base_counts is not None:
-        cumulative_counts += base_counts
+        cumulative_counts += base_counts[None,...]
 
     return cumulative_counts
 
 
-def get_joint_probabilities_from_counts(counts):
+def get_joint_probabilities_from_counts(counts, epsilon=1):
     """Get joint probabilities of output neuron firing and pattern presentation from counts
 
     Args:
         counts: counts of output neuron firing and pattern presentation [shape (time, pattern, neuron)]
+        epsilon: small constant to avoid division by zero and to prevent high joint probabilities due to low counts (default: 1)
     """
 
     # avoid division by zero (assume "worst case" where no pattern is presented)
     counts_cp = counts.copy()
-    counts_cp[counts_cp == 0] = 1.
+    counts_cp[counts_cp == 0] = epsilon
 
     totals = np.sum(np.sum(counts_cp, axis=-1, keepdims=True), axis=-2, keepdims=True)
 
@@ -257,7 +261,7 @@ def get_input_likelihood(weights, biases, input_psp, input_groups, c=1.):
     Args:
         weights: weights of linear layer [shape (neuron, input)]
         biases: biases of linear layer [shape (neuron,)]
-        input_psp: input psp; values assumed to be 0 or 1; should be grouped with each group always having exactly 1 active neuron [shape (..., input)]
+        input_psp: input psp; values assumed to be 0 or 1; should be grouped with each group always having exactly 1 active neuron [shape (time, input)]
         input_groups: group idx of each input (used to appropriately normalize weights) [shape (input,)]
         c: constant used to during learning (default: 1.)
     Output:
@@ -266,12 +270,15 @@ def get_input_likelihood(weights, biases, input_psp, input_groups, c=1.):
 
     # todo: deal with input_psps where multiple neurons in each group may be active at once and which aren't binary
 
+    neuron_count, input_count = weights.shape
+    groups = np.repeat(input_groups[None, :], neuron_count, axis=0)
+
     priors = np.exp(biases)
     normalized_priors = priors / np.sum(priors, axis=-1, keepdims=True)
 
     single_input_likelihoods = np.exp(weights) / c
     group_normalized_single_input_log_likelihoods = np.log(single_input_likelihoods
-                                                           / grouped_sum(single_input_likelihoods, input_groups))
+                                                           / grouped_sum(single_input_likelihoods, groups))
 
     input_log_likelihoods = np.sum(input_psp[..., None, :] * group_normalized_single_input_log_likelihoods[None, :, :],
                                    axis=-1)
@@ -312,3 +319,9 @@ def reorder_dataset_by_targets(data, targets):
     ordered_targets = torch.stack(ordered_targets)
 
     return ordered_data, ordered_targets
+
+
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
