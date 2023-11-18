@@ -261,31 +261,34 @@ def get_input_likelihood(weights, biases, input_psp, input_groups, c=1.):
     """Compute log likelihood of input spikes given weights and biases (as weights and biases represent a learned distribution)
 
     Args:
-        weights: weights of linear layer [shape (neuron, input)]
-        biases: biases of linear layer [shape (neuron,)]
-        input_psp: input psp; values assumed to be 0 or 1; should be grouped with each group always having exactly 1 active neuron [shape (time, input)]
-        input_groups: group idx of each input (used to appropriately normalize weights) [shape (input,)]
+        weights: weights of linear layer [shape (iteration, neuron, input)]
+        biases: biases of linear layer [shape (iteration, neuron,)]
+        input_psp: input psp; values assumed to be 0 or 1; should be grouped with each group always having exactly 1 active neuron [shape (iteration, time, input)]
+        input_groups: group idx of each input (used to appropriately normalize weights) [shape (iteration, input,)]
         c: constant used to during learning (default: 1.)
     Output:
-        total_input_likelihood: total likelihood of input spikes [shape (...,)]
+        total_input_likelihood: total likelihood of input spikes [shape (iteration, time)]
     """
 
     # todo: deal with input_psps where multiple neurons in each group may be active at once and which aren't binary
 
-    neuron_count, input_count = weights.shape
-    groups = np.repeat(input_groups[None, :], neuron_count, axis=0)
+    iteration_count, neuron_count, input_count = weights.shape
+    groups = np.repeat(np.repeat(input_groups[None, None, :], neuron_count, axis=1), iteration_count, axis=0)
 
     priors = np.exp(biases)
     normalized_priors = priors / np.sum(priors, axis=-1, keepdims=True)
 
     single_input_likelihoods = np.exp(weights) / c
+    # todo: this assumes no duplicates in groups
+    # todo: this will turn to nan if there are no spikes in a group -> fix
     group_normalized_single_input_log_likelihoods = np.log(single_input_likelihoods
                                                            / grouped_sum(single_input_likelihoods, groups))
 
-    input_log_likelihoods = np.sum(input_psp[..., None, :] * group_normalized_single_input_log_likelihoods[None, :, :],
-                                   axis=-1)
+    # input_log_likelihoods = np.sum(input_psp[:, :, None, :] * group_normalized_single_input_log_likelihoods[:, None, :, :],
+    #                                axis=-1)
+    input_log_likelihoods = np.einsum('itn,ion->ito', input_psp, group_normalized_single_input_log_likelihoods)
 
-    total_input_likelihood = np.sum(np.exp(input_log_likelihoods) * normalized_priors, axis=-1)
+    total_input_likelihood = np.sum(np.exp(input_log_likelihoods) * normalized_priors[:, None, :], axis=-1)
 
     return total_input_likelihood
 

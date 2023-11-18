@@ -41,8 +41,8 @@ mnist_train.data, mnist_train.targets = reorder_dataset_by_targets(mnist_train.d
 mnist_test.data, mnist_test.targets = reorder_dataset_by_targets(mnist_test.data, mnist_test.targets)
 
 # Reduce to subset (TODO: remove this later)
-mnist_train.data = mnist_train.data[:2000]
-mnist_train.targets = mnist_train.targets[:2000]
+mnist_train.data = mnist_train.data[:200]
+mnist_train.targets = mnist_train.targets[:200]
 mnist_test.data = mnist_train.data[:20]
 mnist_test.targets = mnist_train.targets[:20]
 

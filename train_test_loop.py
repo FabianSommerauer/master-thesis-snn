@@ -161,9 +161,9 @@ def train_model(config: TrainConfig, data_loader):
 
     # Metric tracking
     cumulative_counts_hist = []
-    input_likelihood_hist = []
     total_output_spikes = []
     total_time_ranges = [[] for _ in range(config.distinct_target_count)]
+    total_input_psps = []
 
     # Used for input likelihood calculation
     input_groups = np.repeat(np.arange(model_config.input_neuron_count // 2), 2)
@@ -192,6 +192,8 @@ def train_model(config: TrainConfig, data_loader):
                     for idx, time_range in enumerate(time_ranges):
                         total_time_ranges[idx].extend(time_range)
 
+                    total_input_psps.append(input_psp.cpu().numpy())
+
                     with Timer('cumulative_counts'):
                         cumulative_counts = get_cumulative_counts_over_time(np.array(output_spikes_np),
                                                                             time_ranges,
@@ -199,15 +201,6 @@ def train_model(config: TrainConfig, data_loader):
                                                                             cumulative_counts[-1],
                                                                             time_offset=time_offset)
                         cumulative_counts_hist.append(cumulative_counts)
-
-                    with Timer('input_likelihood'):
-                        weight_np = model.linear.weight.data.cpu().numpy()
-                        bias_np = model.linear.bias.data.cpu().numpy()
-                        input_psp_np = input_psp.cpu().numpy()
-
-                        input_likelihood = get_input_likelihood(weight_np, bias_np,
-                                                                input_psp_np, input_groups, stdp_config.c)
-                        input_likelihood_hist.append(input_likelihood)
 
                     offset += data.shape[0]
 
@@ -229,16 +222,21 @@ def train_model(config: TrainConfig, data_loader):
     cond_cross_entropy = normalized_conditional_cross_entropy(joint_probs)
     cond_cross_entropy_paper = normalized_conditional_cross_entropy_paper(joint_probs)
 
-    input_likelihood_concat = np.concatenate(input_likelihood_hist, axis=0)
-
     output_spikes_concat = np.concatenate(total_output_spikes, axis=0)
 
     neuron_pattern_mapping = get_neuron_pattern_mapping(output_spikes_concat, total_time_ranges)
 
+    input_psps_stacked = np.stack(total_input_psps, axis=0)
+    weights, biases = model.weight_tracker.compute()
+    weights_np = weights.cpu().numpy()
+    biases_np = biases.cpu().numpy()
+    input_likelihood = get_input_likelihood(weights_np, biases_np,
+                                            input_psps_stacked, input_groups, stdp_config.c)
+
     timing_info = Timer.str()
     Timer.reset()
 
-    return TrainResults(cond_cross_entropy, cond_cross_entropy_paper, input_likelihood_concat,
+    return TrainResults(cond_cross_entropy, cond_cross_entropy_paper, input_likelihood,
                         rate_tracker=model.output_neuron_cell.rate_tracker,
                         inhibition_tracker=model.inhibition_tracker,
                         learning_rates_tracker=model.stdp_module.learning_rates_tracker,
@@ -271,7 +269,7 @@ def test_model(config: TestConfig, data_loader):
     total_input_spikes = []
     total_time_ranges = [[] for _ in range(config.distinct_target_count)]
     total_time_ranges_ungrouped = []
-    input_likelihood_hist = []
+    total_input_psps = []
     total_targets = []
 
     model.output_neuron_cell.rate_tracker.is_active = True
@@ -303,6 +301,8 @@ def test_model(config: TestConfig, data_loader):
                 output_spikes_np = output_spikes.cpu().numpy()
                 total_output_spikes.append(output_spikes_np)
 
+                total_input_psps.append(input_psp.cpu().numpy())
+
                 time_offset = encoder.get_time_for_offset(offset)
 
                 pred = get_predictions(output_spikes_np, time_ranges_ungrouped, config.neuron_pattern_mapping)
@@ -322,16 +322,6 @@ def test_model(config: TestConfig, data_loader):
                                                                         cumulative_counts[-1],
                                                                         time_offset=time_offset)
 
-                with Timer('input_likelihood'):
-                    # todo: do this after the loop (same for training)
-                    weight_np = model.linear.weight.data.cpu().numpy()
-                    bias_np = model.linear.bias.data.cpu().numpy()
-                    input_psp_np = input_psp.cpu().numpy()
-
-                    input_likelihood = get_input_likelihood(weight_np, bias_np,
-                                                            input_psp_np, input_groups, stdp_config.c)
-                    input_likelihood_hist.append(input_likelihood)
-
             offset += data.shape[0]
 
     total_acc /= len(data_loader)
@@ -349,8 +339,13 @@ def test_model(config: TestConfig, data_loader):
     cond_cross_entropy = normalized_conditional_cross_entropy(joint_probs)
     cond_cross_entropy_paper = normalized_conditional_cross_entropy_paper(joint_probs)
 
-    input_likelihood_concat = np.concatenate(input_likelihood_hist, axis=0)
-    average_input_likelihood = np.mean(input_likelihood_concat)
+    input_psps_stacked = np.stack(total_input_psps, axis=0)
+    weights_np = model.linear.weight.data.cpu().numpy()[None, ...]
+    biases_np = model.linear.bias.data.cpu().numpy()[None, ...]
+    input_likelihood = get_input_likelihood(weights_np, biases_np,
+                                            input_psps_stacked, input_groups, stdp_config.c)
+
+    average_input_likelihood = np.mean(input_likelihood)
 
     timing_info = Timer.str()
     Timer.reset()
