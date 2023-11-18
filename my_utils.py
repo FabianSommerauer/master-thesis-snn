@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from einops import rearrange
 from torch import Tensor
+from scipy.special import logsumexp
 
 
 def spike_in_range(spike_times, time_ranges):
@@ -257,40 +258,55 @@ def grouped_sum(array, groups):
     return grouped_sums
 
 
-def get_input_likelihood(weights, biases, input_psp, input_groups, c=1.):
+def get_ideal_psp_for_input(input_values):
+    # assumes input values within [0,1] (ideally binary)
+    binarized_values = np.round(input_values).astype(int)
+    return rearrange(np.stack((binarized_values, (1 - binarized_values)), axis=-1), '... v b -> ... (v b)')
+
+
+def get_input_log_likelihood(weights, biases, inputs, c=1.):
     """Compute log likelihood of input spikes given weights and biases (as weights and biases represent a learned distribution)
 
     Args:
-        weights: weights of linear layer [shape (iteration, neuron, input)]
-        biases: biases of linear layer [shape (iteration, neuron,)]
-        input_psp: input psp; values assumed to be 0 or 1; should be grouped with each group always having exactly 1 active neuron [shape (iteration, time, input)]
-        input_groups: group idx of each input (used to appropriately normalize weights) [shape (iteration, input,)]
+        weights: weights of linear layer [shape (time, output_neuron, input_neuron)]
+        biases: biases of linear layer [shape (time, output_neuron,)]
+        inputs: raw input data; values assumed to be between 0 and 1 (will be binarized) [shape (time, input,)]
         c: constant used to during learning (default: 1.)
     Output:
-        total_input_likelihood: total likelihood of input spikes [shape (iteration, time)]
+        log_input_likelihood: log likelihood of ideal input spikes [shape (time)]
     """
 
-    # todo: deal with input_psps where multiple neurons in each group may be active at once and which aren't binary
+    weight_time_steps, output_neuron_count, input_neuron_count = weights.shape
 
-    iteration_count, neuron_count, input_count = weights.shape
-    groups = np.repeat(np.repeat(input_groups[None, None, :], neuron_count, axis=1), iteration_count, axis=0)
+    total_time_steps, input_size = inputs.shape
 
-    priors = np.exp(biases)
-    normalized_priors = priors / np.sum(priors, axis=-1, keepdims=True)
+    assert input_size * 2 == input_neuron_count
+    assert total_time_steps % weight_time_steps == 0
+
+    weight_time_steps_repeat = total_time_steps // weight_time_steps
+
+    input_psp = get_ideal_psp_for_input(inputs)
+    input_groups = np.repeat(np.arange(input_size), 2)
+
+    groups = np.repeat(np.repeat(input_groups[None, None, :], output_neuron_count, axis=1), weight_time_steps, axis=0)
+
+    normalized_log_priors = biases - logsumexp(biases, axis=-1, keepdims=True)
 
     single_input_likelihoods = np.exp(weights) / c
-    # todo: this assumes no duplicates in groups
-    # todo: this will turn to nan if there are no spikes in a group -> fix
+
     group_normalized_single_input_log_likelihoods = np.log(single_input_likelihoods
                                                            / grouped_sum(single_input_likelihoods, groups))
+    group_normalized_single_input_log_likelihoods = np.repeat(group_normalized_single_input_log_likelihoods, weight_time_steps_repeat, axis=0)
+
 
     # input_log_likelihoods = np.sum(input_psp[:, :, None, :] * group_normalized_single_input_log_likelihoods[:, None, :, :],
     #                                axis=-1)
-    input_log_likelihoods = np.einsum('itn,ion->ito', input_psp, group_normalized_single_input_log_likelihoods)
+    input_log_likelihood_per_output_neuron = np.einsum('ti,toi->to', input_psp,
+                                                       group_normalized_single_input_log_likelihoods)
 
-    total_input_likelihood = np.sum(np.exp(input_log_likelihoods) * normalized_priors[:, None, :], axis=-1)
+    input_log_likelihood = logsumexp(input_log_likelihood_per_output_neuron + normalized_log_priors, axis=-1)
 
-    return total_input_likelihood
+    return input_log_likelihood
 
 
 # todo

@@ -499,8 +499,7 @@ class EfficientBayesianSTDPModel(nn.Module):
     def __init__(self, input_neuron_cnt, output_neuron_cnt,
                  input_psp, multi_step_output_neuron_cell: EfficientStochasticOutputNeuronCell,
                  stdp_module,
-                 track_states=False,
-                 return_psp=False):
+                 track_states=False):
         super().__init__()
         self.linear = nn.Linear(input_neuron_cnt, output_neuron_cnt, bias=True).requires_grad_(False)
         self.output_neuron_cell = multi_step_output_neuron_cell
@@ -510,8 +509,6 @@ class EfficientBayesianSTDPModel(nn.Module):
         self.weight_tracker = WeightsTracker(is_active=track_states)
 
         self.stdp_module = stdp_module
-
-        self.return_psp = return_psp
 
     @measure_time
     def forward(self, input_spikes: Tensor, state=None, train: bool = True) \
@@ -542,6 +539,4 @@ class EfficientBayesianSTDPModel(nn.Module):
 
             last_state = [state[-1] for state in z_states]
 
-            if self.return_psp:
-                return z_out, last_state, input_psps
             return z_out, last_state

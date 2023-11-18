@@ -41,8 +41,8 @@ mnist_train.data, mnist_train.targets = reorder_dataset_by_targets(mnist_train.d
 mnist_test.data, mnist_test.targets = reorder_dataset_by_targets(mnist_test.data, mnist_test.targets)
 
 # Reduce to subset (TODO: remove this later)
-mnist_train.data = mnist_train.data[:200]
-mnist_train.targets = mnist_train.targets[:200]
+mnist_train.data = mnist_train.data[:5000]
+mnist_train.targets = mnist_train.targets[:5000]
 mnist_test.data = mnist_train.data[:20]
 mnist_test.targets = mnist_train.targets[:20]
 
@@ -145,11 +145,10 @@ plt.ylim([0, 1])
 plt.legend()
 plt.show()
 
-plt.plot(train_results.input_likelihood_hist, label='Input likelihood')
+plt.plot(train_results.input_log_likelihood_hist, label='Input likelihood')
 plt.title('Training')
 plt.xlabel('Time')
 plt.ylabel('Input likelihood')
-plt.ylim([0, 1])
 #plt.legend()
 plt.show()
 
@@ -192,7 +191,7 @@ learning_rates_tracker.plot()
 
 # visualize bias convergence
 weight_tracker.plot_bias_convergence(target_biases=[np.log(1. / output_neuron_count) for _ in range(output_neuron_count)],
-                                           colors=neuron_colors, exp=False)
+                                     colors=neuron_colors, exp=False)
 
 # visualize normalized exponential of weights in appropriate grid (10x10 for 100 output neurons)
 grid_width = np.ceil(np.sqrt(output_neuron_count))
