@@ -223,17 +223,21 @@ def train_model(config: TrainConfig, data_loader):
 
     neuron_pattern_mapping = get_neuron_pattern_mapping(output_spikes_concat, total_time_ranges)
 
-    input_concat = np.concatenate(total_input_values, axis=0)
+    total_input_log_likelihood = []
+
     weights, biases = model.weight_tracker.compute()
     weights_np = weights.cpu().numpy()
     biases_np = biases.cpu().numpy()
-    input_log_likelihood = get_input_log_likelihood(weights_np, biases_np,
-                                                    input_concat, stdp_config.c)
+    for i in range(len(total_input_values)):
+        input_log_likelihood = get_input_log_likelihood(weights_np[i], biases_np[i],
+                                                        total_input_values[i], stdp_config.c)
+        total_input_log_likelihood.append(input_log_likelihood)
 
     timing_info = Timer.str()
     Timer.reset()
 
-    return TrainResults(cond_cross_entropy, cond_cross_entropy_paper, input_log_likelihood,
+    return TrainResults(cond_cross_entropy, cond_cross_entropy_paper,
+                        input_log_likelihood_hist=np.concatenate(total_input_log_likelihood, axis=0),
                         rate_tracker=model.output_neuron_cell.rate_tracker,
                         inhibition_tracker=model.inhibition_tracker,
                         learning_rates_tracker=model.stdp_module.learning_rates_tracker,
@@ -334,8 +338,8 @@ def test_model(config: TestConfig, data_loader):
     cond_cross_entropy_paper = normalized_conditional_cross_entropy_paper(joint_probs)
 
     input_concat = np.concatenate(total_input_values, axis=0)
-    weights_np = model.linear.weight.data.cpu().numpy()[None, ...]
-    biases_np = model.linear.bias.data.cpu().numpy()[None, ...]
+    weights_np = model.linear.weight.data.cpu().numpy()
+    biases_np = model.linear.bias.data.cpu().numpy()
     input_log_likelihood = get_input_log_likelihood(weights_np, biases_np, input_concat, stdp_config.c)
 
     average_input_log_likelihood = np.mean(input_log_likelihood)

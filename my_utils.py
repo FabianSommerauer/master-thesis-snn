@@ -261,47 +261,39 @@ def grouped_sum(array, groups):
 def get_ideal_psp_for_input(input_values):
     # assumes input values within [0,1] (ideally binary)
     binarized_values = np.round(input_values).astype(int)
-    return rearrange(np.stack((binarized_values, (1 - binarized_values)), axis=-1), '... v b -> ... (v b)')
+    return np.stack((binarized_values, (1 - binarized_values)), axis=-1)
 
 
 def get_input_log_likelihood(weights, biases, inputs, c=1.):
     """Compute log likelihood of input spikes given weights and biases (as weights and biases represent a learned distribution)
 
     Args:
-        weights: weights of linear layer [shape (time, output_neuron, input_neuron)]
-        biases: biases of linear layer [shape (time, output_neuron,)]
+        weights: weights of linear layer [shape (output_neuron, input_neuron)]
+        biases: biases of linear layer [shape (output_neuron,)]
         inputs: raw input data; values assumed to be between 0 and 1 (will be binarized) [shape (time, input,)]
         c: constant used to during learning (default: 1.)
     Output:
         log_input_likelihood: log likelihood of ideal input spikes [shape (time)]
     """
 
-    weight_time_steps, output_neuron_count, input_neuron_count = weights.shape
+    output_neuron_count, input_neuron_count = weights.shape
 
     total_time_steps, input_size = inputs.shape
 
     assert input_size * 2 == input_neuron_count
-    assert total_time_steps % weight_time_steps == 0
-
-    weight_time_steps_repeat = total_time_steps // weight_time_steps
 
     input_psp = get_ideal_psp_for_input(inputs)
-    input_groups = np.repeat(np.arange(input_size), 2)
-
-    groups = np.repeat(np.repeat(input_groups[None, None, :], output_neuron_count, axis=1), weight_time_steps, axis=0)
 
     normalized_log_priors = biases - logsumexp(biases, axis=-1, keepdims=True)
 
-    single_input_likelihoods = np.exp(weights) / c
+    single_input_likelihoods = rearrange(np.exp(weights) / c, 'o (i b) -> o i b', i=input_size, b=2)
 
     group_normalized_single_input_log_likelihoods = np.log(single_input_likelihoods
-                                                           / grouped_sum(single_input_likelihoods, groups))
-    group_normalized_single_input_log_likelihoods = np.repeat(group_normalized_single_input_log_likelihoods, weight_time_steps_repeat, axis=0)
-
+                                                           / np.sum(single_input_likelihoods, axis=-1, keepdims=True))
 
     # input_log_likelihoods = np.sum(input_psp[:, :, None, :] * group_normalized_single_input_log_likelihoods[:, None, :, :],
     #                                axis=-1)
-    input_log_likelihood_per_output_neuron = np.einsum('ti,toi->to', input_psp,
+    input_log_likelihood_per_output_neuron = np.einsum('tib,oib->to', input_psp,
                                                        group_normalized_single_input_log_likelihoods)
 
     input_log_likelihood = logsumexp(input_log_likelihood_per_output_neuron + normalized_log_priors, axis=-1)

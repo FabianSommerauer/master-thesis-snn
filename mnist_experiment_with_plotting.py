@@ -145,10 +145,10 @@ plt.ylim([0, 1])
 plt.legend()
 plt.show()
 
-plt.plot(train_results.input_log_likelihood_hist, label='Input likelihood')
+plt.plot(train_results.input_log_likelihood_hist, label='Input log likelihood')
 plt.title('Training')
 plt.xlabel('Time')
-plt.ylabel('Input likelihood')
+plt.ylabel('Input log likelihood')
 #plt.legend()
 plt.show()
 
