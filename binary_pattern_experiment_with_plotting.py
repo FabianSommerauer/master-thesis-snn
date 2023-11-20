@@ -114,21 +114,29 @@ inhibition_tracker = test_results.inhibition_tracker
 # Plot
 print("Plotting results...")
 
+train_time_steps = np.arange(1, train_results.cross_entropy_hist.shape[0] + 1)
+if train_config.single_metric_per_batch:
+    train_time_steps *= batch_size
+
+train_time_steps *= 50  # ms per batch
+train_time_steps = train_time_steps * model_config.dt  # convert to seconds
+
+
 inhibition_tracker.plot()
 
-plt.plot(train_results.cross_entropy_hist, label='Crossentropy')
-plt.plot(train_results.cross_entropy_paper_hist, label='Paper Crossentropy')
+plt.plot(train_time_steps, train_results.cross_entropy_hist, label='Crossentropy')
+plt.plot(train_time_steps, train_results.cross_entropy_paper_hist, label='Paper Crossentropy')
 plt.title('Training')
-plt.xlabel('Time')
+plt.xlabel('Time [s]')
 plt.ylabel('Normalized Conditional Crossentropy')
 plt.ylim([0, 1])
 plt.legend()
 plt.show()
 
-plt.plot(train_results.input_log_likelihood_hist, label='Input log likelihood')
+plt.plot(train_time_steps, train_results.input_log_likelihood_hist, label='Input log likelihood')
 # plt.axhline(y=np.log(1. / num_patterns), color='r', linestyle='-', label='Maximum Avg. Input Log Likelihood')
 plt.title('Training')
-plt.xlabel('Time')
+plt.xlabel('Time [s]')
 plt.ylabel('Input log likelihood')
 #plt.legend()
 plt.show()
@@ -147,7 +155,7 @@ spikes = [total_input_spikes[:, i] for i in range(total_input_spikes.shape[1])]
 # raster_plot(plt.gca(), spikes)
 raster_plot_multi_color(plt.gca(), spikes, total_time_ranges, group_colors)
 plt.title('Input Spikes')
-plt.xlabel('Time Step')
+plt.xlabel('Time Step [ms]')
 plt.ylabel('Neuron')
 
 # Plot output spikes using a raster plot
@@ -157,7 +165,7 @@ spikes = [total_output_spikes[:, i] for i in range(total_output_spikes.shape[1])
 raster_plot_multi_color(plt.gca(), spikes, total_time_ranges, group_colors, default_color='black',
                         allowed_colors_per_train=allowed_colors)
 plt.title('Output Spikes')
-plt.xlabel('Time Step')
+plt.xlabel('Time Step [ms]')
 plt.ylabel('Neuron')
 
 plt.subplot(3, 1, 3)

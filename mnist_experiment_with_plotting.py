@@ -45,8 +45,8 @@ mnist_test.data = mnist_test.data#[:20]
 mnist_test.targets = mnist_test.targets#[:20]
 
 # Create data loaders
-train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=False)
-test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=False)
+train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=True)
+test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=True)
 
 distinct_targets = mnist_train.targets.unique().cpu().numpy()
 
@@ -61,7 +61,7 @@ data_count = mnist_train.data.shape[0]
 input_osc_args = None  # TODO BackgroundOscillationArgs(1, 20, -torch.pi / 2)
 output_osc_args = BackgroundOscillationArgs(50, 20, -torch.pi / 2)
 
-inhibition_args = InhibitionArgs(1000, 0, 2e-3)
+inhibition_args = InhibitionArgs(1000, 0, 5e-3)
 noise_args = NoiseArgs(0, 5e-3, 50)
 
 model_config = ModelConfig(
@@ -81,7 +81,7 @@ model_config = ModelConfig(
         base_mu=1.,
         base_mu_bias=0.5,
         c=1.,
-        time_batch_size=20
+        time_batch_size=10
     ),
     output_cell_config=OutputCellConfig(
         inhibition_args=inhibition_args,
@@ -137,9 +137,6 @@ inhibition_tracker = test_results.inhibition_tracker
 # Plot
 print("Plotting results...")
 
-test_plot_pattern_count = 10
-test_plot_timestep_subset = test_plot_pattern_count * 50
-
 train_time_steps = np.arange(1, train_results.cross_entropy_hist.shape[0] + 1)
 if train_config.single_metric_per_batch:
     train_time_steps *= batch_size
@@ -148,6 +145,9 @@ train_time_steps *= 50  # ms per batch
 train_time_steps = train_time_steps * model_config.dt  # convert to seconds
 
 # Subset of test spikes
+test_plot_pattern_count = 10
+test_plot_timestep_subset = test_plot_pattern_count * 50
+
 total_input_spikes = total_input_spikes[:test_plot_timestep_subset]
 total_output_spikes = total_output_spikes[:test_plot_timestep_subset]
 total_time_ranges = [[time_range for time_range in time_ranges_per_pattern
