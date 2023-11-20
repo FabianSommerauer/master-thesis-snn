@@ -39,7 +39,7 @@ class InhibitionStateTracker:
         self.inhibition_states = []
         self.noise_states = []
 
-    def plot(self):
+    def plot(self, subset_steps=None):
         """Plot total inhibition and noise (sum of both) over time."""
         inhibition_states, noise_states = self.compute()
 
@@ -48,6 +48,10 @@ class InhibitionStateTracker:
 
         inhibition = inhibition_states.cpu().numpy()
         noise = noise_states.cpu().numpy()
+
+        if subset_steps is not None:
+            inhibition = inhibition[:subset_steps]
+            noise = noise[:subset_steps]
 
         # plt.plot(inhibition, label='Inhibition')
         # plt.plot(noise, label='Noise')
@@ -115,10 +119,13 @@ class SpikeRateTracker:
         plt.legend()
         plt.show()
 
-    def plot_relative_firing_rates(self, ax, colors=None):
+    def plot_relative_firing_rates(self, ax, colors=None, subset_steps=None, legend=True):
         """Plot input rates over time."""
         rel_firing_rates, _ = self.compute()
         rel_firing_rates = rel_firing_rates.cpu().numpy()
+
+        if subset_steps is not None:
+            rel_firing_rates = rel_firing_rates[:subset_steps]
 
         for i in range(rel_firing_rates.shape[-1]):
             if colors is None:
@@ -128,7 +135,8 @@ class SpikeRateTracker:
         ax.set_title('Relative Firing Rates')
         ax.set_xlabel('Time Step')
         ax.set_ylabel('Rate')
-        ax.legend()
+        if legend:
+            ax.legend()
 
 
 class LearningRatesTracker:

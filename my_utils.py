@@ -2,6 +2,7 @@ import random
 
 import numpy as np
 import torch
+from deprecation import deprecated
 from einops import rearrange
 from torch import Tensor
 from scipy.special import logsumexp
@@ -15,11 +16,13 @@ def spike_in_range(spike_times, time_ranges):
     return in_range
 
 
-# TODO: this is not efficient
-# TODO: this allows multiple neurons to be mapped to the same pattern
-# TODO: this could also be done using cumulative counts
 def get_neuron_pattern_mapping(output_spikes, pattern_time_ranges):
-    """Map each output neuron to the pattern that it fires most frequently to."""
+    """Map each output neuron to the pattern that it fires most frequently to.
+
+    Args:
+        output_spikes: output spikes [shape (time, neuron)]
+        pattern_time_ranges: time ranges for each pattern [shape (pattern, time_range, 2)] todo: currently this is just a list of lists
+    """
     neuron_pattern_mapping = []
     pattern_num = len(pattern_time_ranges)
     output_neuron_num = output_spikes.shape[-1]
@@ -34,6 +37,17 @@ def get_neuron_pattern_mapping(output_spikes, pattern_time_ranges):
 
         neuron_pattern_mapping.append(np.argmax(spike_counts))
 
+    return neuron_pattern_mapping
+
+
+def get_neuron_pattern_mapping_from_cumulative_counts(cumulative_counts):
+    """Map each output neuron to the pattern that it fires most frequently to.
+    This is the preferred method if cumulative counts are available.
+
+    Args:
+        cumulative_counts: final cumulative counts of output neuron firing and pattern presentation [shape (pattern, neuron)]
+    """
+    neuron_pattern_mapping = np.argmax(cumulative_counts, axis=0)
     return neuron_pattern_mapping
 
 

@@ -126,6 +126,7 @@ plt.legend()
 plt.show()
 
 plt.plot(train_results.input_log_likelihood_hist, label='Input log likelihood')
+# plt.axhline(y=np.log(1. / num_patterns), color='r', linestyle='-', label='Maximum Avg. Input Log Likelihood')
 plt.title('Training')
 plt.xlabel('Time')
 plt.ylabel('Input log likelihood')

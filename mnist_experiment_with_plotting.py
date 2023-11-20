@@ -1,11 +1,9 @@
 import numpy as np
 import torch
-from einops import rearrange
 from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader
 from torchvision import transforms, datasets
 
-from binary_pattern_dataset import BinaryPatternDataset
 from my_plot_utils import raster_plot_multi_color
 from my_spike_modules import BackgroundOscillationArgs, InhibitionArgs, NoiseArgs, LogFiringRateCalculationMode
 from my_utils import set_seed, ToBinaryTransform, reorder_dataset_by_targets, FlattenTransform
@@ -41,10 +39,10 @@ mnist_train.data, mnist_train.targets = reorder_dataset_by_targets(mnist_train.d
 mnist_test.data, mnist_test.targets = reorder_dataset_by_targets(mnist_test.data, mnist_test.targets)
 
 # Reduce to subset (TODO: remove this later)
-mnist_train.data = mnist_train.data[:5000]
-mnist_train.targets = mnist_train.targets[:5000]
-mnist_test.data = mnist_train.data[:20]
-mnist_test.targets = mnist_train.targets[:20]
+mnist_train.data = mnist_train.data[:10000]
+mnist_train.targets = mnist_train.targets[:10000]
+mnist_test.data = mnist_test.data#[:20]
+mnist_test.targets = mnist_test.targets#[:20]
 
 # Create data loaders
 train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=False)
@@ -53,14 +51,17 @@ test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=False)
 distinct_targets = mnist_train.targets.unique().cpu().numpy()
 
 # Model config
+single_metric_per_batch = True
+
 binary_input_variable_cnt = width * height
 input_neuron_count = binary_input_variable_cnt * 2
 output_neuron_count = 100
+data_count = mnist_train.data.shape[0]
 
 input_osc_args = None  # TODO BackgroundOscillationArgs(1, 20, -torch.pi / 2)
 output_osc_args = BackgroundOscillationArgs(50, 20, -torch.pi / 2)
 
-inhibition_args = InhibitionArgs(1000, 0, 5e-3)
+inhibition_args = InhibitionArgs(1000, 0, 2e-3)
 noise_args = NoiseArgs(0, 5e-3, 50)
 
 model_config = ModelConfig(
@@ -73,7 +74,7 @@ model_config = ModelConfig(
         presentation_duration=4e-2,
         delay=1e-2,
         active_rate=100,
-        inactive_rate=10,
+        inactive_rate=0,
         background_oscillation_args=input_osc_args
     ),
     stdp_config=STDPConfig(
@@ -89,8 +90,8 @@ model_config = ModelConfig(
         background_oscillation_args=output_osc_args,
     ),
 
-    weight_init=None,
-    bias_init=None
+    weight_init=1,
+    bias_init=1
 )
 
 train_config = TrainConfig(
@@ -99,6 +100,8 @@ train_config = TrainConfig(
     print_interval=10,
 
     model_config=model_config,
+
+    single_metric_per_batch=single_metric_per_batch,
 )
 
 test_config = TestConfig(
@@ -134,20 +137,38 @@ inhibition_tracker = test_results.inhibition_tracker
 # Plot
 print("Plotting results...")
 
-inhibition_tracker.plot()
+test_plot_pattern_count = 10
+test_plot_timestep_subset = test_plot_pattern_count * 50
 
-plt.plot(train_results.cross_entropy_hist, label='Crossentropy')
-plt.plot(train_results.cross_entropy_paper_hist, label='Paper Crossentropy')
+train_time_steps = np.arange(1, train_results.cross_entropy_hist.shape[0] + 1)
+if train_config.single_metric_per_batch:
+    train_time_steps *= batch_size
+
+train_time_steps *= 50  # ms per batch
+train_time_steps = train_time_steps * model_config.dt  # convert to seconds
+
+# Subset of test spikes
+total_input_spikes = total_input_spikes[:test_plot_timestep_subset]
+total_output_spikes = total_output_spikes[:test_plot_timestep_subset]
+total_time_ranges = [[time_range for time_range in time_ranges_per_pattern
+                      if time_range[1] <= test_plot_timestep_subset + 1]
+                     for time_ranges_per_pattern in total_time_ranges]
+
+inhibition_tracker.plot(subset_steps=test_plot_timestep_subset)
+
+plt.plot(train_time_steps, train_results.cross_entropy_hist, label='Crossentropy')
+plt.plot(train_time_steps, train_results.cross_entropy_paper_hist, label='Paper Crossentropy')
 plt.title('Training')
-plt.xlabel('Time')
+plt.xlabel('Time [s]')
 plt.ylabel('Normalized Conditional Crossentropy')
 plt.ylim([0, 1])
 plt.legend()
 plt.show()
 
-plt.plot(train_results.input_log_likelihood_hist, label='Input log likelihood')
+plt.plot(train_time_steps, train_results.input_log_likelihood_hist, label='Input log likelihood')
+# plt.axhline(y=np.log(1. / data_count), color='r', linestyle='-', label='Maximum Avg. Input Log Likelihood')
 plt.title('Training')
-plt.xlabel('Time')
+plt.xlabel('Time [s]')
 plt.ylabel('Input log likelihood')
 #plt.legend()
 plt.show()
@@ -166,7 +187,7 @@ spikes = [total_input_spikes[:, i] for i in range(total_input_spikes.shape[1])]
 # raster_plot(plt.gca(), spikes)
 raster_plot_multi_color(plt.gca(), spikes, total_time_ranges, group_colors)
 plt.title('Input Spikes')
-plt.xlabel('Time Step')
+plt.xlabel('Time Step [ms]')
 plt.ylabel('Neuron')
 
 # Plot output spikes using a raster plot
@@ -176,13 +197,13 @@ spikes = [total_output_spikes[:, i] for i in range(total_output_spikes.shape[1])
 raster_plot_multi_color(plt.gca(), spikes, total_time_ranges, group_colors, default_color='black',
                         allowed_colors_per_train=allowed_colors)
 plt.title('Output Spikes')
-plt.xlabel('Time Step')
+plt.xlabel('Time Step [ms]')
 plt.ylabel('Neuron')
 
 plt.subplot(3, 1, 3)
 plt.gca().sharex(first_ax)
 neuron_colors = [group_colors[idx] for idx in train_results.neuron_pattern_mapping]
-rate_tracker.plot_relative_firing_rates(plt.gca(), colors=neuron_colors)
+rate_tracker.plot_relative_firing_rates(plt.gca(), colors=neuron_colors, subset_steps=test_plot_timestep_subset, legend=False)
 
 plt.tight_layout()
 plt.show()

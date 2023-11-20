@@ -12,7 +12,8 @@ from my_timing_utils import Timer
 from my_trackers import SpikeRateTracker, InhibitionStateTracker, LearningRatesTracker, WeightsTracker
 from my_utils import normalized_conditional_cross_entropy_paper, normalized_conditional_cross_entropy, \
     get_joint_probabilities_from_counts, get_cumulative_counts_over_time, get_predictions, \
-    get_predictions_from_rates, get_neuron_pattern_mapping, get_input_log_likelihood
+    get_predictions_from_rates, get_neuron_pattern_mapping, get_input_log_likelihood, \
+    get_neuron_pattern_mapping_from_cumulative_counts
 
 
 @dataclass
@@ -61,6 +62,7 @@ class TrainConfig:
     num_epochs: int
     distinct_target_count: int
     print_interval: int | None = 10
+    single_metric_per_batch: bool = False
 
 
 @dataclass
@@ -160,10 +162,7 @@ def train_model(config: TrainConfig, data_loader):
 
     # Metric tracking
     cumulative_counts_hist = []
-    total_output_spikes = []
-    total_time_ranges = [[] for _ in range(config.distinct_target_count)]
     total_input_values = []
-
 
     # Training
     offset = 0
@@ -171,8 +170,8 @@ def train_model(config: TrainConfig, data_loader):
     state = None
     Timer.reset()
     for epoch in range(num_epochs):
-        for i, (data, targets) in enumerate(iter(data_loader)):
-            with Timer('training loop'):
+        with Timer('training loop'):
+            for i, (data, targets) in enumerate(iter(data_loader)):
                 input_spikes, osc_phase = encoder(data, osc_phase)
 
                 output_spikes, state = model(input_spikes, state=state, train=True)
@@ -185,11 +184,10 @@ def train_model(config: TrainConfig, data_loader):
                     output_spikes_np = output_spikes.cpu().numpy()
                     time_offset = encoder.get_time_for_offset(offset)
 
-                    total_output_spikes.append(output_spikes_np)
-                    for idx, time_range in enumerate(time_ranges):
-                        total_time_ranges[idx].extend(time_range)
-
-                    total_input_values.append(data.cpu().numpy())
+                    if config.single_metric_per_batch:
+                        total_input_values.append(data[None, -1].cpu().numpy())
+                    else:
+                        total_input_values.append(data.cpu().numpy())
 
                     with Timer('cumulative_counts'):
                         cumulative_counts = get_cumulative_counts_over_time(np.array(output_spikes_np),
@@ -197,7 +195,10 @@ def train_model(config: TrainConfig, data_loader):
                                                                             base_counts=None if i == 0 else
                                                                             cumulative_counts[-1],
                                                                             time_offset=time_offset)
-                        cumulative_counts_hist.append(cumulative_counts)
+                        if config.single_metric_per_batch:
+                            cumulative_counts_hist.append(cumulative_counts[None, -1])
+                        else:
+                            cumulative_counts_hist.append(cumulative_counts)
 
                     offset += data.shape[0]
 
@@ -214,24 +215,25 @@ def train_model(config: TrainConfig, data_loader):
                                 print(f"Epoch {epoch}, Iteration {i} \n"
                                       f"Train Loss: {cond_cross_entropy:.4f}; Paper Loss: {cond_cross_entropy_paper:.4f}")
 
-    cumulative_counts_concat = np.concatenate(cumulative_counts_hist, axis=0)
-    joint_probs = get_joint_probabilities_from_counts(cumulative_counts_concat)
-    cond_cross_entropy = normalized_conditional_cross_entropy(joint_probs)
-    cond_cross_entropy_paper = normalized_conditional_cross_entropy_paper(joint_probs)
+    with Timer('cross_entropy'):
+        cumulative_counts_concat = np.concatenate(cumulative_counts_hist, axis=0)
+        joint_probs = get_joint_probabilities_from_counts(cumulative_counts_concat)
+        cond_cross_entropy = normalized_conditional_cross_entropy(joint_probs)
+        cond_cross_entropy_paper = normalized_conditional_cross_entropy_paper(joint_probs)
 
-    output_spikes_concat = np.concatenate(total_output_spikes, axis=0)
+    with Timer('neuron_pattern_mapping'):
+        neuron_pattern_mapping = get_neuron_pattern_mapping_from_cumulative_counts(cumulative_counts_concat[-1])
 
-    neuron_pattern_mapping = get_neuron_pattern_mapping(output_spikes_concat, total_time_ranges)
+    with Timer('input_log_likelihood'):
+        total_input_log_likelihood = []
 
-    total_input_log_likelihood = []
-
-    weights, biases = model.weight_tracker.compute()
-    weights_np = weights.cpu().numpy()
-    biases_np = biases.cpu().numpy()
-    for i in range(len(total_input_values)):
-        input_log_likelihood = get_input_log_likelihood(weights_np[i], biases_np[i],
-                                                        total_input_values[i], stdp_config.c)
-        total_input_log_likelihood.append(input_log_likelihood)
+        weights, biases = model.weight_tracker.compute()
+        weights_np = weights.cpu().numpy()
+        biases_np = biases.cpu().numpy()
+        for i in range(len(total_input_values)):
+            input_log_likelihood = get_input_log_likelihood(weights_np[i], biases_np[i],
+                                                            total_input_values[i], stdp_config.c)
+            total_input_log_likelihood.append(input_log_likelihood)
 
     timing_info = Timer.str()
     Timer.reset()
@@ -348,9 +350,9 @@ def test_model(config: TestConfig, data_loader):
     Timer.reset()
 
     if config.print_results:
-        print(f"Test Accuracy: {total_acc*100:.4f}%")
-        print(f"Test Rate Accuracy: {total_acc_rate*100:.4f}%")
-        print(f"Test Miss Rate: {total_miss*100:.4f}%")
+        print(f"Test Accuracy: {total_acc * 100:.4f}%")
+        print(f"Test Rate Accuracy: {total_acc_rate * 100:.4f}%")
+        print(f"Test Miss Rate: {total_miss * 100:.4f}%")
         print(f"Test Cross Entropy: {cond_cross_entropy:.4f}")
         print(f"Test Paper Cross Entropy: {cond_cross_entropy_paper:.4f}")
         print(f"Test Average Input Log Likelihood: {average_input_log_likelihood:.4f}")
