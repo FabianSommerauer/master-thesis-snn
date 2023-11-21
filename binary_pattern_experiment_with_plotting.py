@@ -179,8 +179,9 @@ plt.show()
 learning_rates_tracker.plot()
 
 # visualize bias convergence
-weight_tracker.plot_bias_convergence(target_biases=[np.log(1. / output_neuron_count) for _ in range(output_neuron_count)],
-                                           colors=neuron_colors, exp=False)
+weight_tracker.plot_bias_convergence(target_biases=[np.log(1. / output_neuron_count)
+                                                    for _ in range(output_neuron_count)],
+                                     colors=neuron_colors, exp=False)
 
 # visualize normalized exponential of weights in appropriate grid (10x10 for 100 output neurons)
 grid_width = np.ceil(np.sqrt(output_neuron_count))
