@@ -51,6 +51,8 @@ class BayesianSTDPClassic(nn.Module):
 class BayesianSTDPAdaptive(nn.Module):
     def __init__(self, input_size, output_size, c: float = 1,
                  time_batch_size: int = 10,
+                 base_mu: float = 1.,
+                 base_mu_bias: float = 0.5,
                  collect_history: bool = False):
         super().__init__()
         self.input_size = input_size
@@ -59,6 +61,9 @@ class BayesianSTDPAdaptive(nn.Module):
         self.lr_state = None
 
         self.c = c
+
+        self.base_mu = base_mu
+        self.base_mu_bias = base_mu_bias
 
         self.time_batch_size = time_batch_size
 
@@ -75,7 +80,7 @@ class BayesianSTDPAdaptive(nn.Module):
             new_weights, new_biases, self.lr_state = apply_bayesian_stdp_with_adaptive_learning_rate_update(
                 input_psp, output_spikes,
                 weights, biases,
-                1e-2, 1e-2,  # todo
+                self.base_mu, self.base_mu_bias,
                 self.lr_state, self.c,
                 self.time_batch_size)
 
@@ -145,7 +150,7 @@ def apply_bayesian_stdp(
         dw = spike_correlations[i] * c * torch.exp(-weights) - total_out_spikes[i, :, None]
 
         # applies to all neurons (if at least one fired)
-        db = (torch.exp(-biases) * total_out_spikes[i] - 1) * total_out_spikes_sum[i]
+        db = torch.exp(-biases) * total_out_spikes[i] - total_out_spikes_sum[i]
 
         weights += mu_weights * dw
         biases += mu_bias * db
@@ -216,7 +221,7 @@ def apply_bayesian_stdp_with_learning_rate_update(
         dw = spike_correlations[i] * c * torch.exp(-weights) - total_out_spikes[i, :, None]
 
         # applies to all neurons (if at least one fired)
-        db = (torch.exp(-biases) * total_out_spikes[i] - 1) * total_out_spikes_sum[i]
+        db = torch.exp(-biases) * total_out_spikes[i] - total_out_spikes_sum[i]
 
         weights += mu_weights * dw
         biases += mu_bias * db
@@ -227,7 +232,8 @@ def apply_bayesian_stdp_with_learning_rate_update(
     return weights, biases, N_k
 
 
-@torch.jit.script
+# todo: add jit.script
+# @torch.jit.script
 def apply_bayesian_stdp_with_adaptive_learning_rate_update(
         input_psp: torch.Tensor,
         output_spikes: torch.Tensor,
@@ -262,6 +268,8 @@ def apply_bayesian_stdp_with_adaptive_learning_rate_update(
             state of the learning rates (mu_weights, weight_first_moment, weight_second_moment,
                                         mu_bias, bias_first_moment, bias_second_moment) for next time step
     """
+
+    # todo: check constants for clipping
     time_steps = input_psp.shape[0]
     output_neuron_count, input_neuron_count = weights.shape
 
@@ -291,44 +299,73 @@ def apply_bayesian_stdp_with_adaptive_learning_rate_update(
 
     if learning_rate_state is None:
         mu_weights = torch.ones_like(weights) * base_mu_weights
-        weight_first_moment = torch.ones_like(weights) # * torch.log(torch.tensor(1./input_neuron_count))
-        weight_second_moment = torch.ones_like(weights) * 2 # + weight_first_moment**2
+        weight_first_moment = weights  # * torch.log(torch.tensor(1./input_neuron_count))
+        weight_second_moment = weight_first_moment ** 2 + 0.1
 
         mu_bias = torch.ones_like(biases) * base_mu_bias
-        bias_first_moment = torch.ones_like(biases) # * torch.log(torch.tensor(1./output_neuron_count))
-        bias_second_moment = torch.ones_like(biases) * 2 # + bias_first_moment**2
+        bias_first_moment = biases  # * torch.log(torch.tensor(1./output_neuron_count))
+        bias_second_moment = bias_first_moment ** 2 + 0.1
     else:
         mu_weights, weight_first_moment, weight_second_moment, \
             mu_bias, bias_first_moment, bias_second_moment = learning_rate_state
 
+    moment_update_factor = 2e-3
+
     for i in range(iterations):
         # only applies to active neuron
-        dw = spike_correlations[i] * c * torch.exp(-weights) - total_out_spikes[i, :, None]
+        dw = torch.clip(spike_correlations[i] * c * torch.exp(-weights) - total_out_spikes[i, :, None], -1e1, 1e1)
 
         # applies to all neurons (if at least one fired)
-        db = (torch.exp(-biases) * total_out_spikes[i] - 1) * total_out_spikes_sum[i]
+        db = torch.clip(torch.exp(-biases) * total_out_spikes[i] - total_out_spikes_sum[i], -1e1, 1e1)
+
+        if torch.any(torch.isnan(dw)):
+            print('dw nan')
+        if torch.any(torch.isnan(db)):
+            print('db nan')
+
+        if torch.any(torch.isinf(dw)):
+            print('dw inf')
+        if torch.any(torch.isinf(db)):
+            print('db inf')
 
         weights += mu_weights * dw
         biases += mu_bias * db
 
+        if torch.any(torch.isnan(weights)):
+            print('weights nan')
+        if torch.any(torch.isnan(biases)):
+            print('biases nan')
+
+        if torch.any(torch.isinf(weights)):
+            print('weights inf')
+        if torch.any(torch.isinf(biases)):
+            print('biases inf')
 
         # TODO
         # update moments and learning rates
-        weight_first_moment = mu_weights * weights + (1 - mu_weights) * weight_first_moment
-        weight_second_moment = mu_weights * weights ** 2 + (1 - mu_weights) * weight_second_moment
+        weight_first_moment = moment_update_factor * weights + (1 - moment_update_factor) * weight_first_moment
+        weight_second_moment = moment_update_factor * weights ** 2 + (1 - moment_update_factor) * weight_second_moment
 
         # TODO
-        # weight_first_moment = weight_first_moment / (1 - mu_weights ** time_step + 1e-8)
+        # weight_first_moment = weight_first_moment / (1 - moment_update_factor ** time_step + 1e-8)
 
-        bias_first_moment = mu_bias * biases + (1 - mu_bias) * bias_first_moment
-        bias_second_moment = mu_bias * biases ** 2 + (1 - mu_bias) * bias_second_moment
+        bias_first_moment = moment_update_factor * biases + (1 - moment_update_factor) * bias_first_moment
+        bias_second_moment = moment_update_factor * biases ** 2 + (1 - moment_update_factor) * bias_second_moment
 
         # TODO
-        # bias_first_moment = bias_first_moment / (1 - mu_bias ** time_step + 1e-8)
+        # bias_first_moment = bias_first_moment / (1 - moment_update_factor ** time_step + 1e-8)
 
         # adaptive learning rates with variance tracking
         mu_weights = (weight_second_moment - weight_first_moment ** 2) / (torch.exp(-weight_first_moment) + 1.0)
         mu_bias = (bias_second_moment - bias_first_moment ** 2) / (torch.exp(-bias_first_moment) + 1.0)
+
+        mu_weights = torch.clip(mu_weights, 1e-6, base_mu_weights)
+        mu_bias = torch.clip(mu_bias, 1e-6, base_mu_bias)
+
+        if torch.any(torch.isnan(mu_weights)):
+            print('mu_weights nan')
+        if torch.any(torch.isnan(mu_bias)):
+            print('mu_bias nan')
 
     lr_state = (mu_weights, weight_first_moment, weight_second_moment,
                 mu_bias, bias_first_moment, bias_second_moment)

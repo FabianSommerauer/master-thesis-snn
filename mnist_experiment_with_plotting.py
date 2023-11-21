@@ -138,11 +138,13 @@ inhibition_tracker = test_results.inhibition_tracker
 print("Plotting results...")
 
 train_time_steps = np.arange(1, train_results.cross_entropy_hist.shape[0] + 1)
-if train_config.single_metric_per_batch:
-    train_time_steps *= batch_size
-
-train_time_steps *= 50  # ms per batch
 train_time_steps = train_time_steps * model_config.dt  # convert to seconds
+if train_config.single_metric_per_batch:
+    train_time_steps *= 50  # ms per data point
+    train_time_steps *= batch_size
+    train_data_time_steps = train_time_steps
+else:
+    train_data_time_steps = train_time_steps[::batch_size * 50]
 
 # Subset of test spikes
 test_plot_pattern_count = 10
@@ -165,7 +167,7 @@ plt.ylim([0, 1])
 plt.legend()
 plt.show()
 
-plt.plot(train_time_steps, train_results.input_log_likelihood_hist, label='Input log likelihood')
+plt.plot(train_data_time_steps, train_results.input_log_likelihood_hist, label='Input log likelihood')
 # plt.axhline(y=np.log(1. / data_count), color='r', linestyle='-', label='Maximum Avg. Input Log Likelihood')
 plt.title('Training')
 plt.xlabel('Time [s]')

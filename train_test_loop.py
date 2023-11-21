@@ -31,6 +31,7 @@ class STDPConfig:
     base_mu_bias: float
     c: float
     time_batch_size: int
+    adaptive: bool = False
 
 
 @dataclass
@@ -124,13 +125,15 @@ def init_model(model_config: ModelConfig) -> Tuple[SpikePopulationGroupBatchToTi
                                                      encoder_config.delay, dt,
                                                      background_oscillation_args=encoder_config.background_oscillation_args)
 
-    stdp_module = custom_stdp.BayesianSTDPClassic(model_config.output_neuron_count, c=stdp_config.c,
+    if stdp_config.adaptive:
+        stdp_module = custom_stdp.BayesianSTDPAdaptive(model_config.input_neuron_count, model_config.output_neuron_count,
+                                                       time_batch_size=stdp_config.time_batch_size,
+                                                       c=stdp_config.c, collect_history=True)
+    else:
+        stdp_module = custom_stdp.BayesianSTDPClassic(model_config.output_neuron_count, c=stdp_config.c,
                                                   base_mu=stdp_config.base_mu, base_mu_bias=stdp_config.base_mu_bias,
                                                   time_batch_size=stdp_config.time_batch_size,
                                                   collect_history=True)
-    # stdp_module = custom_stdp.BayesianSTDPAdaptive(input_neurons, output_neurons,
-    #                                                time_batch_size=stdp_time_batch_size,
-    #                                                c=1, collect_history=True)  #todo: get this to work
 
     output_cell = EfficientStochasticOutputNeuronCell(inhibition_args=output_cell_config.inhibition_args,
                                                       noise_args=output_cell_config.noise_args,

@@ -17,7 +17,7 @@ set_seed(seed)
 # Data config
 batch_size = 1
 num_patterns = 10
-num_repeats_train = 500
+num_repeats_train = 200
 num_repeats_test = 4
 pattern_length = 300
 pattern_sparsity = 0.5
@@ -37,10 +37,10 @@ binary_input_variable_cnt = pat_len
 input_neuron_count = binary_input_variable_cnt * 2
 output_neuron_count = distinct_targets.shape[0]
 
-input_osc_args = None  # TODO BackgroundOscillationArgs(1, 20, -torch.pi / 2)
+input_osc_args = None  # BackgroundOscillationArgs(1, 20, -torch.pi / 2)
 output_osc_args = BackgroundOscillationArgs(50, 20, -torch.pi / 2)
 
-inhibition_args = InhibitionArgs(1000, 0, 5e-3)
+inhibition_args = InhibitionArgs(2000, 150, 5e-3)
 noise_args = NoiseArgs(0, 5e-3, 50)
 
 model_config = ModelConfig(
@@ -52,15 +52,16 @@ model_config = ModelConfig(
     encoder_config=EncoderConfig(
         presentation_duration=4e-2,
         delay=1e-2,
-        active_rate=30,
+        active_rate=50,
         inactive_rate=5,
         background_oscillation_args=input_osc_args
     ),
     stdp_config=STDPConfig(
         base_mu=1.,
-        base_mu_bias=0.5,
+        base_mu_bias=5e-1,
         c=1.,
-        time_batch_size=10
+        time_batch_size=10,
+        adaptive=True,
     ),
     output_cell_config=OutputCellConfig(
         inhibition_args=inhibition_args,
@@ -69,8 +70,8 @@ model_config = ModelConfig(
         background_oscillation_args=output_osc_args,
     ),
 
-    weight_init=2.,
-    bias_init=2.
+    weight_init=2,
+    bias_init=2
 )
 
 train_config = TrainConfig(
@@ -115,11 +116,14 @@ inhibition_tracker = test_results.inhibition_tracker
 print("Plotting results...")
 
 train_time_steps = np.arange(1, train_results.cross_entropy_hist.shape[0] + 1)
-if train_config.single_metric_per_batch:
-    train_time_steps *= batch_size
-
-train_time_steps *= 50  # ms per batch
 train_time_steps = train_time_steps * model_config.dt  # convert to seconds
+if train_config.single_metric_per_batch:
+    train_time_steps *= 50  # ms per data point
+    train_time_steps *= batch_size
+    train_data_time_steps = train_time_steps
+else:
+    train_data_time_steps = train_time_steps[::batch_size * 50]
+
 
 
 inhibition_tracker.plot()
@@ -133,7 +137,7 @@ plt.ylim([0, 1])
 plt.legend()
 plt.show()
 
-plt.plot(train_time_steps, train_results.input_log_likelihood_hist, label='Input log likelihood')
+plt.plot(train_data_time_steps, train_results.input_log_likelihood_hist, label='Input log likelihood')
 # plt.axhline(y=np.log(1. / num_patterns), color='r', linestyle='-', label='Maximum Avg. Input Log Likelihood')
 plt.title('Training')
 plt.xlabel('Time [s]')

@@ -133,7 +133,7 @@ class SpikeRateTracker:
             else:
                 ax.plot(rel_firing_rates[:, i], label=f'Output neuron {i}', color=colors[i])
         ax.set_title('Relative Firing Rates')
-        ax.set_xlabel('Time Step')
+        ax.set_xlabel('Time Step [ms]')
         ax.set_ylabel('Rate')
         if legend:
             ax.legend()
