@@ -1,9 +1,11 @@
-from typing import Literal, Tuple, Optional
+from typing import Tuple, Optional
+
 import torch
 import torch.nn as nn
-from my_trackers import LearningRatesTracker
-from my_timing_utils import Timer
 from deprecation import deprecated
+
+from my_timing_utils import Timer
+from my_trackers import LearningRatesTracker
 
 
 class BayesianSTDPClassic(nn.Module):
@@ -244,8 +246,7 @@ def apply_bayesian_stdp_with_learning_rate_update(
     return weights, biases, N_k
 
 
-# todo: add jit.script
-# @torch.jit.script
+@torch.jit.script
 def apply_bayesian_stdp_with_adaptive_learning_rate_update(
         input_psp: torch.Tensor,
         output_spikes: torch.Tensor,
@@ -291,7 +292,6 @@ def apply_bayesian_stdp_with_adaptive_learning_rate_update(
                                         mu_bias, bias_first_moment, bias_second_moment) for next time step
     """
 
-    # todo: check constants for clipping
     time_steps = input_psp.shape[0]
 
     if time_batch_size == 1:
@@ -346,42 +346,15 @@ def apply_bayesian_stdp_with_adaptive_learning_rate_update(
         db = torch.clip(bias_bumps - total_out_spikes_sum[i]
                         , -max_delta, max_delta)
 
-        if torch.any(torch.isnan(dw)):
-            print('dw nan')
-        if torch.any(torch.isnan(db)):
-            print('db nan')
-
-        if torch.any(torch.isinf(dw)):
-            print('dw inf')
-        if torch.any(torch.isinf(db)):
-            print('db inf')
-
         weights += mu_weights * dw
         biases += mu_bias * db
 
-        if torch.any(torch.isnan(weights)):
-            print('weights nan')
-        if torch.any(torch.isnan(biases)):
-            print('biases nan')
-
-        if torch.any(torch.isinf(weights)):
-            print('weights inf')
-        if torch.any(torch.isinf(biases)):
-            print('biases inf')
-
-        # TODO
         # update moments and learning rates
         weight_first_moment = moment_update_factor * weights + (1 - moment_update_factor) * weight_first_moment
         weight_second_moment = moment_update_factor * weights ** 2 + (1 - moment_update_factor) * weight_second_moment
 
-        # TODO
-        # weight_first_moment = weight_first_moment / (1 - moment_update_factor ** time_step + 1e-8)
-
         bias_first_moment = moment_update_factor * biases + (1 - moment_update_factor) * bias_first_moment
         bias_second_moment = moment_update_factor * biases ** 2 + (1 - moment_update_factor) * bias_second_moment
-
-        # TODO
-        # bias_first_moment = bias_first_moment / (1 - moment_update_factor ** time_step + 1e-8)
 
         # adaptive learning rates with variance tracking
         mu_weights = (weight_second_moment - weight_first_moment ** 2) / (torch.exp(-weight_first_moment) + 1.0)
@@ -389,11 +362,6 @@ def apply_bayesian_stdp_with_adaptive_learning_rate_update(
 
         mu_weights = torch.clip(mu_weights, min_mu_weights, base_mu_weights)
         mu_bias = torch.clip(mu_bias, min_mu_bias, base_mu_bias)
-
-        if torch.any(torch.isnan(mu_weights)):
-            print('mu_weights nan')
-        if torch.any(torch.isnan(mu_bias)):
-            print('mu_bias nan')
 
     lr_state = (mu_weights, weight_first_moment, weight_second_moment,
                 mu_bias, bias_first_moment, bias_second_moment)
