@@ -12,7 +12,7 @@ from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellCo
     TestConfig, test_model
 
 # Set seed
-seed = 533
+seed = 666  # todo: 54 seems to cause problems
 set_seed(seed)
 
 # Data config
@@ -61,7 +61,7 @@ model_config = ModelConfig(
         base_mu=5e-2,  # 5e-1 (classic); 5e-2 (adaptive)
         base_mu_bias=5e-2,  # 5e-1 (classic); 5e-2 (adaptive)
         c=1.,
-        time_batch_size=10,
+        time_batch_size=5,
         adaptive=True,
     ),
     output_cell_config=OutputCellConfig(
@@ -71,8 +71,8 @@ model_config = ModelConfig(
         background_oscillation_args=output_osc_args,
     ),
 
-    weight_init=1,  # 0 (classic); 2 (adaptive)
-    bias_init=1  # -2 (classic); 2 (adaptive)
+    weight_init=0,  # 0 (classic); 2 (adaptive)
+    bias_init=0  # -2 (classic); 2 (adaptive)
 )
 
 train_config = TrainConfig(

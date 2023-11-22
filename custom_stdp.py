@@ -349,12 +349,19 @@ def apply_bayesian_stdp_with_adaptive_learning_rate_update(
         weights += mu_weights * dw
         biases += mu_bias * db
 
-        # update moments and learning rates
-        weight_first_moment = moment_update_factor * weights + (1 - moment_update_factor) * weight_first_moment
-        weight_second_moment = moment_update_factor * weights ** 2 + (1 - moment_update_factor) * weight_second_moment
+        weight_interpolation_factor = 1 - torch.exp(-moment_update_factor * total_out_spikes[i, :, None])
+        bias_interpolation_factor = 1 - torch.exp(-moment_update_factor * total_out_spikes_sum[i])
 
-        bias_first_moment = moment_update_factor * biases + (1 - moment_update_factor) * bias_first_moment
-        bias_second_moment = moment_update_factor * biases ** 2 + (1 - moment_update_factor) * bias_second_moment
+        # update moments and learning rates
+        weight_first_moment = (weight_interpolation_factor * weights
+                               + (1 - weight_interpolation_factor) * weight_first_moment)
+        weight_second_moment = (weight_interpolation_factor * weights ** 2
+                                + (1 - weight_interpolation_factor) * weight_second_moment)
+
+        bias_first_moment = (bias_interpolation_factor * biases
+                             + (1 - bias_interpolation_factor) * bias_first_moment)
+        bias_second_moment = (bias_interpolation_factor * biases ** 2
+                              + (1 - bias_interpolation_factor) * bias_second_moment)
 
         # adaptive learning rates with variance tracking
         mu_weights = (weight_second_moment - weight_first_moment ** 2) / (torch.exp(-weight_first_moment) + 1.0)
