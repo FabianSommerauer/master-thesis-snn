@@ -2,6 +2,7 @@ import numpy as np
 import torch
 from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader
+from pandas import DataFrame as df
 
 from binary_pattern_dataset import BinaryPatternDataset
 from my_plot_utils import raster_plot_multi_color
@@ -11,7 +12,7 @@ from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellCo
     TestConfig, test_model
 
 # Set seed
-seed = 23
+seed = 533
 set_seed(seed)
 
 # Data config
@@ -40,7 +41,7 @@ output_neuron_count = distinct_targets.shape[0]
 input_osc_args = None  # BackgroundOscillationArgs(1, 20, -torch.pi / 2)
 output_osc_args = BackgroundOscillationArgs(50, 20, -torch.pi / 2)
 
-inhibition_args = InhibitionArgs(2000, 150, 5e-3)
+inhibition_args = InhibitionArgs(2000, 100, 5e-3)  # 1000, 0, 5e-3 (classic); 2000, 100, 5e-3 (adaptive)
 noise_args = NoiseArgs(0, 5e-3, 50)
 
 model_config = ModelConfig(
@@ -52,13 +53,13 @@ model_config = ModelConfig(
     encoder_config=EncoderConfig(
         presentation_duration=4e-2,
         delay=1e-2,
-        active_rate=50,
+        active_rate=40,
         inactive_rate=5,
         background_oscillation_args=input_osc_args
     ),
     stdp_config=STDPConfig(
-        base_mu=1.,
-        base_mu_bias=5e-1,
+        base_mu=5e-2,  # 5e-1 (classic); 5e-2 (adaptive)
+        base_mu_bias=5e-2,  # 5e-1 (classic); 5e-2 (adaptive)
         c=1.,
         time_batch_size=10,
         adaptive=True,
@@ -70,8 +71,8 @@ model_config = ModelConfig(
         background_oscillation_args=output_osc_args,
     ),
 
-    weight_init=2,
-    bias_init=2
+    weight_init=1,  # 0 (classic); 2 (adaptive)
+    bias_init=1  # -2 (classic); 2 (adaptive)
 )
 
 train_config = TrainConfig(
@@ -111,7 +112,6 @@ weight_tracker = train_results.weights_tracker
 rate_tracker = test_results.rate_tracker
 inhibition_tracker = test_results.inhibition_tracker
 
-
 # Plot
 print("Plotting results...")
 
@@ -124,8 +124,6 @@ if train_config.single_metric_per_batch:
 else:
     train_data_time_steps = train_time_steps[::batch_size * 50]
 
-
-
 inhibition_tracker.plot()
 
 plt.plot(train_time_steps, train_results.cross_entropy_hist, label='Crossentropy')
@@ -137,14 +135,24 @@ plt.ylim([0, 1])
 plt.legend()
 plt.show()
 
-plt.plot(train_data_time_steps, train_results.input_log_likelihood_hist, label='Input log likelihood')
+input_log_likelihood_df = df.from_dict({
+    'ts': train_data_time_steps,
+    'log_l': train_results.input_log_likelihood_hist,
+})
+
+rolling_mean = input_log_likelihood_df.log_l.rolling(window=10).mean()
+rolling_std = input_log_likelihood_df.log_l.rolling(window=10).std()
+
+
+# plt.plot(train_data_time_steps, train_results.input_log_likelihood_hist, label='Input log likelihood')
+plt.plot(train_data_time_steps, rolling_mean, label='Input log likelihood')
+plt.fill_between(train_data_time_steps, rolling_mean - rolling_std, rolling_mean + rolling_std, alpha=0.2)
 # plt.axhline(y=np.log(1. / num_patterns), color='r', linestyle='-', label='Maximum Avg. Input Log Likelihood')
 plt.title('Training')
 plt.xlabel('Time [s]')
 plt.ylabel('Input log likelihood')
-#plt.legend()
+# plt.legend()
 plt.show()
-
 
 cmap = plt.get_cmap("tab10")
 group_colors = [cmap(i) for i in range(distinct_targets.shape[0])]
