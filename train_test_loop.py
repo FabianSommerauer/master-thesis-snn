@@ -12,8 +12,8 @@ from my_timing_utils import Timer
 from my_trackers import SpikeRateTracker, InhibitionStateTracker, LearningRatesTracker, WeightsTracker
 from my_utils import normalized_conditional_cross_entropy_paper, normalized_conditional_cross_entropy, \
     get_joint_probabilities_from_counts, get_cumulative_counts_over_time, get_predictions, \
-    get_predictions_from_rates, get_neuron_pattern_mapping, get_input_log_likelihood, \
-    get_neuron_pattern_mapping_from_cumulative_counts
+    get_predictions_from_rates, get_input_log_likelihood, \
+    get_neuron_pattern_mapping_from_cumulative_counts, set_seed
 
 
 @dataclass
@@ -126,14 +126,18 @@ def init_model(model_config: ModelConfig) -> Tuple[SpikePopulationGroupBatchToTi
                                                      background_oscillation_args=encoder_config.background_oscillation_args)
 
     if stdp_config.adaptive:
-        stdp_module = custom_stdp.BayesianSTDPAdaptive(model_config.input_neuron_count, model_config.output_neuron_count,
+        stdp_module = custom_stdp.BayesianSTDPAdaptive(model_config.input_neuron_count,
+                                                       model_config.output_neuron_count,
                                                        time_batch_size=stdp_config.time_batch_size,
+                                                       base_mu=stdp_config.base_mu,
+                                                       base_mu_bias=stdp_config.base_mu_bias,
                                                        c=stdp_config.c, collect_history=True)
     else:
         stdp_module = custom_stdp.BayesianSTDPClassic(model_config.output_neuron_count, c=stdp_config.c,
-                                                  base_mu=stdp_config.base_mu, base_mu_bias=stdp_config.base_mu_bias,
-                                                  time_batch_size=stdp_config.time_batch_size,
-                                                  collect_history=True)
+                                                      base_mu=stdp_config.base_mu,
+                                                      base_mu_bias=stdp_config.base_mu_bias,
+                                                      time_batch_size=stdp_config.time_batch_size,
+                                                      collect_history=True)
 
     output_cell = EfficientStochasticOutputNeuronCell(inhibition_args=output_cell_config.inhibition_args,
                                                       noise_args=output_cell_config.noise_args,
@@ -370,3 +374,45 @@ def test_model(config: TestConfig, data_loader):
                        total_output_spikes=np.concatenate(total_output_spikes, axis=0),
                        total_time_ranges=total_time_ranges,
                        timing_info=timing_info)
+
+
+def evaluate_config(train_config, test_config, init_dataset_func, seeds):
+    repeats = len(seeds)
+
+    metrics = {
+        'accuracy': [],
+        'rate_accuracy': [],
+        'miss_rate': [],
+        'loss': [],
+        'loss_paper': [],
+        'input_log_likelihood': [],
+        'confusion_matrix': []
+    }
+
+    for i in range(repeats):
+        set_seed(seeds[i])
+
+        train_loader, test_loader = init_dataset_func(seeds[i])
+
+        # Train
+        train_results = train_model(train_config, train_loader)
+
+        trained_params = train_results.trained_params
+        neuron_pattern_mapping = train_results.neuron_pattern_mapping
+
+        # Test
+        test_config.trained_params = trained_params
+        test_config.neuron_pattern_mapping = neuron_pattern_mapping
+
+        test_results = test_model(test_config, test_loader)
+
+        # Get metrics
+        metrics['accuracy'].append(test_results.accuracy)
+        metrics['rate_accuracy'].append(test_results.rate_accuracy)
+        metrics['miss_rate'].append(test_results.miss_rate)
+        metrics['loss'].append(test_results.cross_entropy)
+        metrics['loss_paper'].append(test_results.cross_entropy_paper)
+        metrics['input_log_likelihood'].append(test_results.average_input_log_likelihood)
+        metrics['confusion_matrix'].append(test_results.confusion_matrix)
+
+    return metrics

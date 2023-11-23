@@ -12,7 +12,7 @@ from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellCo
     TestConfig, test_model
 
 # Set seed
-seed = 666  # todo: 54 seems to cause problems
+seed = 12  # todo: 54 seems to cause problems
 set_seed(seed)
 
 # Data config
@@ -58,8 +58,8 @@ model_config = ModelConfig(
         background_oscillation_args=input_osc_args
     ),
     stdp_config=STDPConfig(
-        base_mu=5e-2,  # 5e-1 (classic); 5e-2 (adaptive)
-        base_mu_bias=5e-2,  # 5e-1 (classic); 5e-2 (adaptive)
+        base_mu=2e-2,  # 5e-1 (classic); 2e-1 (adaptive)  (low values will make bias convergence more visible)
+        base_mu_bias=1e-2,  # 5e-1 (classic); 1e-1 (adaptive)
         c=1.,
         time_batch_size=5,
         adaptive=True,

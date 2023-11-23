@@ -6,7 +6,7 @@ from torch.utils.data import Dataset
 # todo: maybe add some noise to the patterns
 class BinaryPatternDataset(Dataset):
     def __init__(self, num_patterns, num_repeats, pattern_length,
-                 pattern_sparsity, seed=44):
+                 pattern_sparsity, seed=None):
         self.num_patterns = num_patterns
         self.num_repeats = num_repeats
         self.pattern_length = pattern_length
@@ -14,7 +14,8 @@ class BinaryPatternDataset(Dataset):
 
         self.seed = seed
         self.generator = torch.Generator()
-        self.generator.manual_seed(self.seed)
+        if self.seed is not None:
+            self.generator.manual_seed(self.seed)
 
         self.patterns, self.pattern_ids = self.generate_dataset()
 
