@@ -57,7 +57,7 @@ class BayesianSTDPAdaptive(nn.Module):
                  base_mu_bias: float = 0.5,
                  min_mu_weights: float = 1e-6,
                  min_mu_bias: float = 1e-6,
-                 max_delta: float = 1e1,
+                 max_delta: float = 2e0,
                  moment_update_factor: float = 1e-3,
                  collect_history: bool = False):
         super().__init__()
@@ -255,15 +255,15 @@ def apply_bayesian_stdp_with_adaptive_learning_rate_update(
         base_mu_weights: float,
         base_mu_bias: float,
         learning_rate_state: Optional[Tuple[torch.Tensor, torch.Tensor, torch.Tensor,
-                                   torch.Tensor, torch.Tensor, torch.Tensor]] = None,
+        torch.Tensor, torch.Tensor, torch.Tensor]] = None,
         c: float = 1,
         time_batch_size: int = 10,
         min_mu_weights: float = 1e-6,
         min_mu_bias: float = 1e-6,
-        max_delta: float = 1e2,
+        max_delta: float = 1e1,
         moment_update_factor: float = 1e-3,
-        ) -> Tuple[torch.Tensor, torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor,
-                                   torch.Tensor, torch.Tensor, torch.Tensor]]:
+) -> Tuple[torch.Tensor, torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor,
+torch.Tensor, torch.Tensor, torch.Tensor]]:
     """STDP step for bayesian computation with adaptive learning rates. Uses variance tracking.
     Allows for more accurately processing large batches of time steps.
 
@@ -282,7 +282,7 @@ def apply_bayesian_stdp_with_adaptive_learning_rate_update(
         time_batch_size (int): number of time steps to process at once (should not contain too many distinct output spikes)
         min_mu_weights (float): minimum learning rate for the weights
         min_mu_bias (float): minimum learning rate for the bias
-        max_delta (float): maximum change in weights and biases per time step (before being multiplied by the learning rate)
+        max_delta (float): maximum change in weights and biases per time step (after being multiplied by the learning rate)
         moment_update_factor (float): factor for updating the moments
     Output:
         weights (torch.tensor): Updated weights
@@ -339,15 +339,18 @@ def apply_bayesian_stdp_with_adaptive_learning_rate_update(
         bias_bumps = torch.nan_to_num(bias_bumps)
 
         # only applies to active neuron
-        dw = torch.clip(weight_bumps - total_out_spikes[i, :, None]
-                        , -max_delta, max_delta)
+        dw = weight_bumps - total_out_spikes[i, :, None]
 
         # applies to all neurons (if at least one fired)
-        db = torch.clip(bias_bumps - total_out_spikes_sum[i]
-                        , -max_delta, max_delta)
+        db = bias_bumps - total_out_spikes_sum[i]
 
-        weights += mu_weights * dw
-        biases += mu_bias * db
+        delta_weights = torch.clip(mu_weights * dw
+                                   , -max_delta, max_delta)
+        delta_biases = torch.clip(mu_bias * db
+                                  , -max_delta, max_delta)
+
+        weights += delta_weights
+        biases += delta_biases
 
         weight_interpolation_factor = 1 - torch.exp(-moment_update_factor * total_out_spikes[i, :, None])
         bias_interpolation_factor = 1 - torch.exp(-moment_update_factor * total_out_spikes_sum[i])
@@ -373,4 +376,3 @@ def apply_bayesian_stdp_with_adaptive_learning_rate_update(
     lr_state = (mu_weights, weight_first_moment, weight_second_moment,
                 mu_bias, bias_first_moment, bias_second_moment)
     return weights, biases, lr_state
-

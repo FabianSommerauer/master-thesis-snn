@@ -302,13 +302,20 @@ def get_input_log_likelihood(weights, biases, inputs, c=1.):
 
     single_input_likelihoods = rearrange(np.exp(weights) / c, 'o (i b) -> o i b', i=input_size, b=2)
 
-    group_normalized_single_input_log_likelihoods = np.log(single_input_likelihoods
-                                                           / np.sum(single_input_likelihoods, axis=-1, keepdims=True))
+    with np.errstate(divide='ignore'):
+        group_normalized_single_input_log_likelihoods = np.log(single_input_likelihoods
+                                                               / (np.sum(single_input_likelihoods, axis=-1, keepdims=True)
+                                                                  + 1e-10))
 
-    # input_log_likelihoods = np.sum(input_psp[:, :, None, :] * group_normalized_single_input_log_likelihoods[:, None, :, :],
-    #                                axis=-1)
-    input_log_likelihood_per_output_neuron = np.einsum('tib,oib->to', input_psp,
-                                                       group_normalized_single_input_log_likelihoods)
+    # # more readable but susceptible to numerical errors (0 * -inf = nan)
+    # input_log_likelihood_per_output_neuron = np.einsum('tib,oib->to', input_psp,
+    #                                                    group_normalized_single_input_log_likelihoods)
+
+    # less readable and requires more memory but avoids numerical errors
+    with np.errstate(invalid='ignore'):
+        product = input_psp[:, None, :, :] * group_normalized_single_input_log_likelihoods[None, :, :, :]
+    product[np.isnan(product)] = 0.  # the only nan values are from 0 * log(0) which is 0
+    input_log_likelihood_per_output_neuron = np.sum(np.sum(product, axis=-1), axis=-1)
 
     input_log_likelihood = logsumexp(input_log_likelihood_per_output_neuron + normalized_log_priors, axis=-1)
 
