@@ -231,6 +231,8 @@ def normalized_conditional_cross_entropy(joint_probabilities):
 
     Args:
         joint_probabilities: joint probabilities of pattern presentation and output neuron firing [shape (time, pattern, neuron) or (pattern, neuron)]
+    Output:
+        normalized_cond_cross_entropy: normalized conditional cross entropy [shape (time,)]
     """
 
     # todo: deal with zeros

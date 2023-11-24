@@ -386,7 +386,9 @@ def evaluate_config(train_config, test_config, init_dataset_func, seeds):
         'loss': [],
         'loss_paper': [],
         'input_log_likelihood': [],
-        'confusion_matrix': []
+        'confusion_matrix': [],
+        'avg_train_loss': None,
+        'avg_train_loss_paper': None
     }
 
     for i in range(repeats):
@@ -414,5 +416,18 @@ def evaluate_config(train_config, test_config, init_dataset_func, seeds):
         metrics['loss_paper'].append(test_results.cross_entropy_paper)
         metrics['input_log_likelihood'].append(test_results.average_input_log_likelihood)
         metrics['confusion_matrix'].append(test_results.confusion_matrix)
+
+        if metrics['avg_train_loss'] is None:
+            metrics['avg_train_loss'] = train_results.cross_entropy_hist
+        else:
+            metrics['avg_train_loss'] += train_results.cross_entropy_hist
+
+        if metrics['avg_train_loss_paper'] is None:
+            metrics['avg_train_loss_paper'] = train_results.cross_entropy_paper_hist
+        else:
+            metrics['avg_train_loss_paper'] += train_results.cross_entropy_paper_hist
+
+    metrics['avg_train_loss'] /= repeats
+    metrics['avg_train_loss_paper'] /= repeats
 
     return metrics
