@@ -314,7 +314,7 @@ def test_model(config: TestConfig, data_loader):
 
                 pred = get_predictions(output_spikes_np, time_ranges_ungrouped, config.neuron_pattern_mapping)
 
-                confusion_matrix += np.bincount(targets_np * pred_option_count + (pred + 1),
+                confusion_matrix += np.bincount(pred_option_count * (targets_np + 1) + (pred + 1),
                                                 minlength=(pred_option_count ** 2)
                                                 ).reshape((pred_option_count, pred_option_count))
 
