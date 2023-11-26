@@ -39,7 +39,7 @@ class InhibitionStateTracker:
         self.inhibition_states = []
         self.noise_states = []
 
-    def plot(self, subset_steps=None):
+    def plot(self, subset_steps=None, save_path=None):
         """Plot total inhibition and noise (sum of both) over time."""
         inhibition_states, noise_states = self.compute()
 
@@ -56,6 +56,11 @@ class InhibitionStateTracker:
         # plt.plot(inhibition, label='Inhibition')
         # plt.plot(noise, label='Noise')
         plt.plot(inhibition + noise, label='Total')
+        plt.xlabel("Time [ms]")
+        plt.ylabel("Total inhibition")
+
+        if save_path is not None:
+            plt.savefig(save_path)
         # plt.legend()
         plt.show()
 
@@ -161,14 +166,8 @@ class LearningRatesTracker:
         self.mu_w_history = []
         self.mu_b_history = []
 
-    def plot(self):
+    def plot(self, legend=True, save_path=None):
         mu_w_history, mu_b_history = self.compute()
-
-        # # todo: this has different interpretations for different STDP modules -> fix
-        # plt.plot(torch.mean(mu_w_history, -1)[:, 0], label='mu_w 0')
-        # plt.plot(torch.mean(mu_w_history, -1)[:, 1], label='mu_w 1')
-        # plt.plot(torch.mean(mu_w_history, -1)[:, 2], label='mu_w 2')
-        # plt.plot(torch.mean(mu_b_history, -1)[:], label='mu_b')
 
         mu_w_hist_mean = torch.mean(mu_w_history, -1)
         mu_b_hist_mean = torch.mean(mu_b_history, -1)
@@ -178,7 +177,13 @@ class LearningRatesTracker:
         plt.plot(mu_b_hist_mean, label='mu_b')
 
         plt.yscale('log')
-        plt.legend()
+        plt.xlabel('Time [ms]')
+        if legend:
+            plt.legend()
+
+        if save_path is not None:
+            plt.savefig(save_path)
+
         plt.show()
 
 
@@ -210,7 +215,7 @@ class WeightsTracker:
         self.weights_history = []
         self.bias_history = []
 
-    def plot_bias_convergence(self, target_biases=None, colors=None, exp=True):
+    def plot_bias_convergence(self, target_biases=None, colors=None, exp=True, save_path=None, legend=True):
         weights_history, bias_history = self.compute()
 
         if weights_history is None or bias_history is None:
@@ -232,11 +237,17 @@ class WeightsTracker:
                             label=f'target bias {i}')
 
         plt.title('Bias convergence')
-        plt.legend()
+        plt.xlabel('Time [ms]')
+        plt.tight_layout()
+        if legend:
+            plt.legend()
+        if save_path is not None:
+            plt.savefig(save_path)
         plt.show()
 
-    def plot_final_weight_visualization(self, grid_size, image_size, stride=2, offset=0, exp=True):
+    def plot_final_weight_visualization(self, grid_size, image_size, stride=2, offset=0, exp=True, save_path=None):
         weights_history, bias_history = self.compute()
 
         weights = weights_history[-1]
-        plot_weight_visualization(weights, grid_size, image_size, stride=stride, offset=offset, exp=exp)
+        plot_weight_visualization(weights, grid_size, image_size,
+                                  stride=stride, offset=offset, exp=exp, save_path=save_path)

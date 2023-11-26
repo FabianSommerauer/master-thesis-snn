@@ -1,10 +1,9 @@
 import json
 import random
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-
 from torch.utils.data import DataLoader
 
 from binary_pattern_dataset import BinaryPatternDataset
@@ -128,7 +127,7 @@ set_param_func = set_inhibition_rest
 param_values = [0, 25, 50, 75, 100, 125, 150, 175, 200]
 
 # save base config
-with open(f'./results/{experiment_name}_base_config.txt', 'w') as f:
+with open(f'./results/config_eval/{experiment_name}/{experiment_name}_base_config.txt', 'w') as f:
     f.write(str(model_config))
 
 # Train loss
@@ -164,7 +163,7 @@ for val in param_values:
 
     # # save results
     # eval_results['confusion_matrix'] = [mat.tolist() for mat in eval_results['confusion_matrix']]
-    # with open(f'./results/{experiment_name}_{val}_{seed}.json', 'w') as f:
+    # with open(f'./results/config_eval/{experiment_name}/{experiment_name}_{val}_{seed}.json', 'w') as f:
     #     json.dump(eval_results, f, indent=4)
 
     # add results to dataframe
@@ -187,14 +186,14 @@ avg_train_loss /= len(param_values)
 avg_train_loss_paper /= len(param_values)
 
 # save average train loss
-with open(f'./results/{experiment_name}_{seed}_avg_train_loss.json', 'w') as f:
+with open(f'./results/config_eval/{experiment_name}/{experiment_name}_{seed}_avg_train_loss.json', 'w') as f:
     json.dump(avg_train_loss.tolist(), f, indent=4)
-with open(f'./results/{experiment_name}_{seed}_avg_train_loss_paper.json', 'w') as f:
+with open(f'./results/config_eval/{experiment_name}/{experiment_name}_{seed}_avg_train_loss_paper.json', 'w') as f:
     json.dump(avg_train_loss_paper.tolist(), f, indent=4)
 
 df = pd.concat(dfs)
 # Save dataframe
-df.to_csv(f'./results/{experiment_name}_{seed}.csv', index=False)
+df.to_csv(f'./results/config_eval/{experiment_name}/{experiment_name}_{seed}.csv', index=False)
 
 # Plot results as boxplots
 df.boxplot(column=['accuracy', 'rate_accuracy', 'miss_rate'],
@@ -202,7 +201,7 @@ df.boxplot(column=['accuracy', 'rate_accuracy', 'miss_rate'],
 plt.ylim([0, 1])
 plt.suptitle(param_name)
 plt.tight_layout()
-plt.savefig(f'./results/{experiment_name}_{seed}_accuracy.png')
+plt.savefig(f'./results/config_eval/{experiment_name}/{experiment_name}_{seed}_accuracy.png')
 plt.show()
 
 df.boxplot(column=['loss', 'loss_paper'],
@@ -210,16 +209,15 @@ df.boxplot(column=['loss', 'loss_paper'],
 plt.ylim([0, 1])
 plt.suptitle(param_name)
 plt.tight_layout()
-plt.savefig(f'./results/{experiment_name}_{seed}_loss.png')
+plt.savefig(f'./results/config_eval/{experiment_name}/{experiment_name}_{seed}_loss.png')
 plt.show()
 
 df.boxplot(column=['input_log_likelihood'],
            by='value', figsize=(20, 10))
 plt.suptitle(param_name)
 plt.tight_layout()
-plt.savefig(f'./results/{experiment_name}_{seed}_input_log_likelihood.png')
+plt.savefig(f'./results/config_eval/{experiment_name}/{experiment_name}_{seed}_input_log_likelihood.png')
 plt.show()
-
 
 # plot average train loss
 plt.plot(avg_train_loss, label='Train loss')
@@ -229,7 +227,7 @@ plt.xlabel('Time')
 plt.ylim([0, 1])
 plt.tight_layout()
 plt.legend()
-plt.savefig(f'./results/{experiment_name}_{seed}_avg_train_loss.png')
+plt.savefig(f'./results/config_eval/{experiment_name}/{experiment_name}_{seed}_avg_train_loss.png')
 plt.show()
 
 # plot each loss
@@ -241,7 +239,7 @@ plt.ylabel('Loss')
 plt.ylim([0, 1])
 plt.tight_layout()
 plt.legend()
-plt.savefig(f'./results/{experiment_name}_{seed}_train_loss.png')
+plt.savefig(f'./results/config_eval/{experiment_name}/{experiment_name}_{seed}_train_loss.png')
 plt.show()
 
 for i in range(len(train_losses_paper)):
@@ -252,5 +250,5 @@ plt.ylabel('Paper Loss')
 plt.ylim([0, 1])
 plt.tight_layout()
 plt.legend()
-plt.savefig(f'./results/{experiment_name}_{seed}_train_loss_paper.png')
+plt.savefig(f'./results/config_eval/{experiment_name}/{experiment_name}_{seed}_train_loss_paper.png')
 plt.show()

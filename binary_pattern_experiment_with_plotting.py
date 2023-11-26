@@ -1,26 +1,25 @@
 import numpy as np
-import torch
 from matplotlib import pyplot as plt
-from torch.utils.data import DataLoader
 from pandas import DataFrame as df
+from torch.utils.data import DataLoader
 
 from binary_pattern_dataset import BinaryPatternDataset
 from my_plot_utils import raster_plot_multi_color
-from my_spike_modules import BackgroundOscillationArgs, InhibitionArgs, NoiseArgs, LogFiringRateCalculationMode
+from my_spike_modules import InhibitionArgs, NoiseArgs, LogFiringRateCalculationMode
 from my_utils import set_seed
 from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellConfig, TrainConfig, train_model, \
     TestConfig, test_model
 
 # Set seed
-seed = 12  # todo: 54 seems to cause problems
+seed = 4729
 set_seed(seed)
 
 # Data config
 batch_size = 1
-num_patterns = 10
-num_repeats_train = 200
+num_patterns = 5
+num_repeats_train = 100
 num_repeats_test = 4
-pattern_length = 300
+pattern_length = 100
 pattern_sparsity = 0.5
 
 # Load data
@@ -39,7 +38,7 @@ input_neuron_count = binary_input_variable_cnt * 2
 output_neuron_count = distinct_targets.shape[0]
 
 input_osc_args = None  # BackgroundOscillationArgs(1, 20, -torch.pi / 2)
-output_osc_args = BackgroundOscillationArgs(50, 20, -torch.pi / 2)
+output_osc_args = None  # BackgroundOscillationArgs(50, 20, -torch.pi / 2)
 
 inhibition_args = InhibitionArgs(2000, 100, 5e-3)  # 1000, 0, 5e-3 (classic); 2000, 100, 5e-3 (adaptive)
 noise_args = NoiseArgs(0, 5e-3, 50)
@@ -58,8 +57,8 @@ model_config = ModelConfig(
         background_oscillation_args=input_osc_args
     ),
     stdp_config=STDPConfig(
-        base_mu=2e-2,  # 5e-1 (classic); 2e-1 (adaptive)  (low values will make bias convergence more visible)
-        base_mu_bias=1e-2,  # 5e-1 (classic); 1e-1 (adaptive)
+        base_mu=2e-1,  # 5e-1 (classic); 2e-1 (adaptive)  (low values will make bias convergence more visible)
+        base_mu_bias=2e-1,  # 5e-1 (classic); 1e-1 (adaptive)
         c=1.,
         time_batch_size=5,
         adaptive=True,
@@ -113,6 +112,8 @@ rate_tracker = test_results.rate_tracker
 inhibition_tracker = test_results.inhibition_tracker
 
 # Plot
+experiment_name = "adaptive_simple"
+
 print("Plotting results...")
 
 train_time_steps = np.arange(1, train_results.cross_entropy_hist.shape[0] + 1)
@@ -124,7 +125,7 @@ if train_config.single_metric_per_batch:
 else:
     train_data_time_steps = train_time_steps[::batch_size * 50]
 
-inhibition_tracker.plot()
+inhibition_tracker.plot(save_path=f'./results/plotting/{experiment_name}/{experiment_name}_{seed}_inhibition.png')
 
 plt.plot(train_time_steps, train_results.cross_entropy_hist, label='Crossentropy')
 plt.plot(train_time_steps, train_results.cross_entropy_paper_hist, label='Paper Crossentropy')
@@ -133,6 +134,7 @@ plt.xlabel('Time [s]')
 plt.ylabel('Normalized Conditional Crossentropy')
 plt.ylim([0, 1])
 plt.legend()
+plt.savefig(f'./results/plotting/{experiment_name}/{experiment_name}_{seed}_cross_entropy.png')
 plt.show()
 
 input_log_likelihood_df = df.from_dict({
@@ -143,7 +145,6 @@ input_log_likelihood_df = df.from_dict({
 rolling_mean = input_log_likelihood_df.log_l.rolling(window=10).mean()
 rolling_std = input_log_likelihood_df.log_l.rolling(window=10).std()
 
-
 # plt.plot(train_data_time_steps, train_results.input_log_likelihood_hist, label='Input log likelihood')
 plt.plot(train_data_time_steps, rolling_mean, label='Input log likelihood')
 plt.fill_between(train_data_time_steps, rolling_mean - rolling_std, rolling_mean + rolling_std, alpha=0.2)
@@ -151,6 +152,7 @@ plt.fill_between(train_data_time_steps, rolling_mean - rolling_std, rolling_mean
 plt.title('Training')
 plt.xlabel('Time [s]')
 plt.ylabel('Input log likelihood')
+plt.savefig(f'./results/plotting/{experiment_name}/{experiment_name}_{seed}_input_log_likelihood.png')
 # plt.legend()
 plt.show()
 
@@ -186,18 +188,27 @@ neuron_colors = [group_colors[idx] for idx in train_results.neuron_pattern_mappi
 rate_tracker.plot_relative_firing_rates(plt.gca(), colors=neuron_colors)
 
 plt.tight_layout()
+plt.savefig(f'./results/plotting/{experiment_name}/{experiment_name}_{seed}_spike_history.png')
 plt.show()
 
-learning_rates_tracker.plot()
+learning_rates_tracker.plot(
+    save_path=f'./results/plotting/{experiment_name}/{experiment_name}_{seed}_learning_rates.png',
+    legend=True)
 
 # visualize bias convergence
 weight_tracker.plot_bias_convergence(target_biases=[np.log(1. / output_neuron_count)
                                                     for _ in range(output_neuron_count)],
-                                     colors=neuron_colors, exp=False)
+                                     colors=neuron_colors, exp=False,
+                                     save_path=f'./results/plotting/{experiment_name}/{experiment_name}_{seed}_bias_convergence.png',
+                                     legend=False)
 
 # visualize normalized exponential of weights in appropriate grid (10x10 for 100 output neurons)
 grid_width = np.ceil(np.sqrt(output_neuron_count))
 grid_height = np.ceil(output_neuron_count / grid_width)
 width = np.ceil(np.sqrt(pat_len))
 height = np.ceil(pat_len / width)
-weight_tracker.plot_final_weight_visualization((grid_width, grid_height), (width, height))
+weight_tracker.plot_final_weight_visualization((grid_width, grid_height), (width, height),
+                                               save_path=f'./results/plotting/{experiment_name}/{experiment_name}_{seed}_weight_visualization.png')
+
+print(train_results.timing_info)
+print(test_results.timing_info)
