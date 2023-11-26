@@ -1,3 +1,6 @@
+import json
+import os
+
 import numpy as np
 from matplotlib import pyplot as plt
 from pandas import DataFrame as df
@@ -10,8 +13,11 @@ from my_utils import set_seed
 from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellConfig, TrainConfig, train_model, \
     TestConfig, test_model
 
+# Experiment name
+experiment_name = "adaptive_40Hz"
+
 # Set seed
-seed = 4729
+seed = 4334
 set_seed(seed)
 
 # Data config
@@ -74,6 +80,13 @@ model_config = ModelConfig(
     bias_init=0  # -2 (classic); 2 (adaptive)
 )
 
+# create folder for experiment
+os.makedirs(f'./results/single_run/{experiment_name}', exist_ok=True)
+
+# save base config
+with open(f'./results/single_run/{experiment_name}/{experiment_name}_base_config.txt', 'w') as f:
+    f.write(str(model_config))
+
 train_config = TrainConfig(
     num_epochs=1,
     distinct_target_count=distinct_targets.shape[0],
@@ -112,8 +125,6 @@ rate_tracker = test_results.rate_tracker
 inhibition_tracker = test_results.inhibition_tracker
 
 # Plot
-experiment_name = "adaptive_simple"
-
 print("Plotting results...")
 
 train_time_steps = np.arange(1, train_results.cross_entropy_hist.shape[0] + 1)
@@ -125,7 +136,7 @@ if train_config.single_metric_per_batch:
 else:
     train_data_time_steps = train_time_steps[::batch_size * 50]
 
-inhibition_tracker.plot(save_path=f'./results/plotting/{experiment_name}/{experiment_name}_{seed}_inhibition.png')
+inhibition_tracker.plot(save_path=f'./results/single_run/{experiment_name}/{experiment_name}_{seed}_inhibition.png')
 
 plt.plot(train_time_steps, train_results.cross_entropy_hist, label='Crossentropy')
 plt.plot(train_time_steps, train_results.cross_entropy_paper_hist, label='Paper Crossentropy')
@@ -134,7 +145,7 @@ plt.xlabel('Time [s]')
 plt.ylabel('Normalized Conditional Crossentropy')
 plt.ylim([0, 1])
 plt.legend()
-plt.savefig(f'./results/plotting/{experiment_name}/{experiment_name}_{seed}_cross_entropy.png')
+plt.savefig(f'./results/single_run/{experiment_name}/{experiment_name}_{seed}_cross_entropy.png')
 plt.show()
 
 input_log_likelihood_df = df.from_dict({
@@ -152,7 +163,7 @@ plt.fill_between(train_data_time_steps, rolling_mean - rolling_std, rolling_mean
 plt.title('Training')
 plt.xlabel('Time [s]')
 plt.ylabel('Input log likelihood')
-plt.savefig(f'./results/plotting/{experiment_name}/{experiment_name}_{seed}_input_log_likelihood.png')
+plt.savefig(f'./results/single_run/{experiment_name}/{experiment_name}_{seed}_input_log_likelihood.png')
 # plt.legend()
 plt.show()
 
@@ -188,18 +199,18 @@ neuron_colors = [group_colors[idx] for idx in train_results.neuron_pattern_mappi
 rate_tracker.plot_relative_firing_rates(plt.gca(), colors=neuron_colors)
 
 plt.tight_layout()
-plt.savefig(f'./results/plotting/{experiment_name}/{experiment_name}_{seed}_spike_history.png')
+plt.savefig(f'./results/single_run/{experiment_name}/{experiment_name}_{seed}_spike_history.png')
 plt.show()
 
 learning_rates_tracker.plot(
-    save_path=f'./results/plotting/{experiment_name}/{experiment_name}_{seed}_learning_rates.png',
+    save_path=f'./results/single_run/{experiment_name}/{experiment_name}_{seed}_learning_rates.png',
     legend=True)
 
 # visualize bias convergence
 weight_tracker.plot_bias_convergence(target_biases=[np.log(1. / output_neuron_count)
                                                     for _ in range(output_neuron_count)],
                                      colors=neuron_colors, exp=False,
-                                     save_path=f'./results/plotting/{experiment_name}/{experiment_name}_{seed}_bias_convergence.png',
+                                     save_path=f'./results/single_run/{experiment_name}/{experiment_name}_{seed}_bias_convergence.png',
                                      legend=False)
 
 # visualize normalized exponential of weights in appropriate grid (10x10 for 100 output neurons)
@@ -208,7 +219,22 @@ grid_height = np.ceil(output_neuron_count / grid_width)
 width = np.ceil(np.sqrt(pat_len))
 height = np.ceil(pat_len / width)
 weight_tracker.plot_final_weight_visualization((grid_width, grid_height), (width, height),
-                                               save_path=f'./results/plotting/{experiment_name}/{experiment_name}_{seed}_weight_visualization.png')
+                                               save_path=f'./results/single_run/{experiment_name}/{experiment_name}_{seed}_weight_visualization.png')
 
-print(train_results.timing_info)
-print(test_results.timing_info)
+test_metrics = {
+    'accuracy': test_results.accuracy,
+    'rate_accuracy': test_results.rate_accuracy,
+    'miss_rate': test_results.miss_rate,
+    'cross_entropy': test_results.cross_entropy,
+    'cross_entropy_paper': test_results.cross_entropy_paper,
+    'avg_log_likelihood': test_results.average_input_log_likelihood
+}
+
+with open(f'./results/single_run/{experiment_name}/{experiment_name}_test_metrics.json', 'w') as f:
+    json.dump(test_metrics, f, indent=4)
+
+with open(f'./results/single_run/{experiment_name}/{experiment_name}_train_timing_info.txt', 'w') as f:
+    f.write(train_results.timing_info)
+
+with open(f'./results/single_run/{experiment_name}/{experiment_name}_test_timing_info.txt', 'w') as f:
+    f.write(test_results.timing_info)

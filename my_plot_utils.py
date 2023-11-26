@@ -52,7 +52,7 @@ def raster_plot_multi_color_per_train(ax, spikes, time_ranges_per_color_per_trai
     ax.yaxis.set_major_formatter(ticker.StrMethodFormatter("{x:.0f}"))
 
 
-def plot_weight_visualization(weights, grid_size, image_size, stride=2, offset=0, exp=True, save_path=save_path):
+def plot_weight_visualization(weights, grid_size, image_size, stride=2, offset=0, exp=True, save_path=None):
     width, height = image_size
     grid_width, grid_height = grid_size
 

@@ -1,0 +1,31 @@
+global: 7.02121305 sec (100.00%) [0]
+  training loop: 6.78384781 sec (96.62%) [1]
+    SpikePopulationGroupBatchToTimeEncoder.forward: 0.61336827 sec (9.04%) [500]
+    EfficientBayesianSTDPModel.forward: 5.94514179 sec (87.64%) [500]
+      BinaryTimedPSP.forward: 0.24434614 sec (4.11%) [500]
+      EfficientStochasticOutputNeuronCell.forward: 3.61323571 sec (60.78%) [500]
+        inhibition: 0.12773728 sec (3.54%) [500]
+        background_oscillation: 0.00000000 sec (0.00%) [500]
+        rate_calc: 0.11570144 sec (3.20%) [500]
+        spike_loc_gen: 0.06282830 sec (1.74%) [500]
+        spike_gen: 3.23624420 sec (89.57%) [500]
+          inhibition_calc: 3.19141316 sec (98.61%) [500]
+          ... 0.04483104 sec (1.39%)
+        rate_track: 0.03985000 sec (1.10%) [500]
+        ... 0.03087449 sec (0.85%)
+      state_metric: 0.00099730 sec (0.02%) [500]
+      stdp: 2.01578188 sec (33.91%) [500]
+      ... 0.07078075 sec (1.19%)
+    metric_processing: 0.13056207 sec (1.92%) [500]
+      SpikePopulationGroupBatchToTimeEncoder.get_time_ranges_for_patterns: 0.02290988 sec (17.55%) [500]
+        SpikePopulationGroupBatchToTimeEncoder.get_time_ranges: 0.00398993 sec (17.42%) [500]
+        ... 0.01891994 sec (82.58%)
+      cumulative_counts: 0.07373428 sec (56.47%) [500]
+      metric_printing: 0.00897789 sec (6.88%) [500]
+        cross_entropy: 0.00698042 sec (77.75%) [51]
+        ... 0.00199747 sec (22.25%)
+      ... 0.02494001 sec (19.10%)
+    ... 0.09477568 sec (1.40%)
+  cross_entropy: 0.11273742 sec (1.61%) [1]
+  neuron_pattern_mapping: 0.00000000 sec (0.00%) [1]
+  input_log_likelihood: 0.12462783 sec (1.78%) [1]

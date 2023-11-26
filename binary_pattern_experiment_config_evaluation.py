@@ -1,4 +1,5 @@
 import json
+import os
 import random
 
 import matplotlib.pyplot as plt
@@ -125,6 +126,9 @@ experiment_name = 'inhibition_rest'
 param_name = 'Inhibition rest'
 set_param_func = set_inhibition_rest
 param_values = [0, 25, 50, 75, 100, 125, 150, 175, 200]
+
+# create folder for experiment
+os.makedirs(f'./results/config_eval/{experiment_name}', exist_ok=True)
 
 # save base config
 with open(f'./results/config_eval/{experiment_name}/{experiment_name}_base_config.txt', 'w') as f:
