@@ -1,6 +1,7 @@
 import json
 import os
 import random
+from dataclasses import dataclass
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,6 +13,17 @@ from my_spike_modules import InhibitionArgs, NoiseArgs, LogFiringRateCalculation
 from my_utils import set_seed
 from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellConfig, TrainConfig, TestConfig, \
     evaluate_config
+
+
+@dataclass
+class BinaryPatternDataConfig:
+    batch_size: int
+    num_patterns: int
+    num_repeats_train: int
+    num_repeats_test: int
+    pattern_length: int
+    pattern_sparsity: float
+
 
 # Set seed
 seed = 5464
@@ -25,14 +37,19 @@ num_repeats_test = 10
 pattern_length = 300
 pattern_sparsity = 0.5
 
+data_config = BinaryPatternDataConfig(batch_size, num_patterns, num_repeats_train,
+                                      num_repeats_test, pattern_length, pattern_sparsity)
+
 
 def init_binary_pattern_dataset(seed=None):
     # Load data
-    binary_train = BinaryPatternDataset(num_patterns, num_repeats_train, pattern_length, pattern_sparsity, seed=seed)
-    binary_test = BinaryPatternDataset(num_patterns, num_repeats_test, pattern_length, pattern_sparsity, seed=seed)
+    binary_train = BinaryPatternDataset(data_config.num_patterns, data_config.num_repeats_train,
+                                        data_config.pattern_length, data_config.pattern_sparsity, seed=seed)
+    binary_test = BinaryPatternDataset(data_config.num_patterns, data_config.num_repeats_test,
+                                       data_config.pattern_length, data_config.pattern_sparsity, seed=seed)
 
-    train_loader = DataLoader(binary_train, batch_size=batch_size, shuffle=False)
-    test_loader = DataLoader(binary_test, batch_size=batch_size, shuffle=False)
+    train_loader = DataLoader(binary_train, batch_size=data_config.batch_size, shuffle=False)
+    test_loader = DataLoader(binary_test, batch_size=data_config.batch_size, shuffle=False)
 
     # distinct_targets = binary_train.pattern_ids.unique().cpu().numpy()
 
@@ -123,7 +140,7 @@ def set_inhibition_rest(model_config: ModelConfig, value: float):
 
 
 experiment_name = 'inhibition_rest'
-param_name = 'Inhibition rest'
+param_name = 'inhibition_rest'
 set_param_func = set_inhibition_rest
 param_values = [0, 25, 50, 75, 100, 125, 150, 175, 200]
 
@@ -200,28 +217,18 @@ df = pd.concat(dfs)
 df.to_csv(f'./results/config_eval/{experiment_name}/{experiment_name}_{seed}.csv', index=False)
 
 # Plot results as boxplots
-df.boxplot(column=['accuracy', 'rate_accuracy', 'miss_rate'],
-           by='value', figsize=(20, 10))
-plt.ylim([0, 1])
-plt.suptitle(param_name)
-plt.tight_layout()
-plt.savefig(f'./results/config_eval/{experiment_name}/{experiment_name}_{seed}_accuracy.png')
-plt.show()
-
-df.boxplot(column=['loss', 'loss_paper'],
-           by='value', figsize=(20, 10))
-plt.ylim([0, 1])
-plt.suptitle(param_name)
-plt.tight_layout()
-plt.savefig(f'./results/config_eval/{experiment_name}/{experiment_name}_{seed}_loss.png')
-plt.show()
-
-df.boxplot(column=['input_log_likelihood'],
-           by='value', figsize=(20, 10))
-plt.suptitle(param_name)
-plt.tight_layout()
-plt.savefig(f'./results/config_eval/{experiment_name}/{experiment_name}_{seed}_input_log_likelihood.png')
-plt.show()
+columns = ['accuracy', 'rate_accuracy', 'miss_rate', 'loss', 'loss_paper', 'input_log_likelihood']
+for column in columns:
+    axes = df.boxplot(column=column,
+                      by='value', figsize=(20, 10))
+    axes[0].xlabel(param_name)
+    axes[0].ylabel(column)
+    if column in ['accuracy', 'rate_accuracy', 'miss_rate', 'loss', 'loss_paper']:
+        plt.ylim([0, 1])
+    plt.suptitle('')
+    plt.tight_layout()
+    plt.savefig(f'./results/config_eval/{experiment_name}/{experiment_name}_{seed}_{param_name}.png')
+    plt.show()
 
 # plot average train loss
 plt.plot(avg_train_loss, label='Train loss')
@@ -236,23 +243,23 @@ plt.show()
 
 # plot each loss
 for i in range(len(train_losses)):
-    plt.plot(train_losses[i], label=f'{param_name} = {param_values[i]}')
+    plt.plot(train_losses[i], label=f'{param_values[i]}')
 plt.title('Training')
 plt.xlabel('Time')
 plt.ylabel('Loss')
 plt.ylim([0, 1])
 plt.tight_layout()
-plt.legend()
+plt.legend(title=f'{param_name}')
 plt.savefig(f'./results/config_eval/{experiment_name}/{experiment_name}_{seed}_train_loss.png')
 plt.show()
 
 for i in range(len(train_losses_paper)):
-    plt.plot(train_losses_paper[i], label=f'{param_name} = {param_values[i]}')
+    plt.plot(train_losses_paper[i], label=f'{param_values[i]}')
 plt.title('Training')
 plt.xlabel('Time')
 plt.ylabel('Paper Loss')
 plt.ylim([0, 1])
 plt.tight_layout()
-plt.legend()
+plt.legend(title=f'{param_name}')
 plt.savefig(f'./results/config_eval/{experiment_name}/{experiment_name}_{seed}_train_loss_paper.png')
 plt.show()

@@ -2,8 +2,6 @@ import torch
 from torch.utils.data import Dataset
 
 
-# todo: train test split?
-# todo: maybe add some noise to the patterns
 class BinaryPatternDataset(Dataset):
     def __init__(self, num_patterns, num_repeats, pattern_length,
                  pattern_sparsity, seed=None):
