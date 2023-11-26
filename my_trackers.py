@@ -177,7 +177,8 @@ class LearningRatesTracker:
         plt.plot(mu_b_hist_mean, label='mu_b')
 
         plt.yscale('log')
-        plt.xlabel('Time [ms]')
+        plt.xlabel('Iterations')
+        plt.title('Learning rates')
         if legend:
             plt.legend()
 
@@ -237,7 +238,7 @@ class WeightsTracker:
                             label=f'target bias {i}')
 
         plt.title('Bias convergence')
-        plt.xlabel('Time [ms]')
+        plt.xlabel('Iterations')
         plt.tight_layout()
         if legend:
             plt.legend()
