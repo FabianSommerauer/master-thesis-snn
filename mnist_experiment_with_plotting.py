@@ -1,8 +1,10 @@
+import json
 import os
 
 import numpy as np
 import torch
 from matplotlib import pyplot as plt
+from pandas import DataFrame as df
 from torch.utils.data import DataLoader
 from torchvision import transforms, datasets
 
@@ -13,7 +15,7 @@ from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellCo
     TestConfig, test_model
 
 # Experiment name
-experiment_name = "adaptive_simple_osc"
+experiment_name = "adaptive_simple"
 
 # Set seed
 seed = 9665
@@ -42,11 +44,11 @@ _, width, height = mnist_train.data.shape
 mnist_train.data, mnist_train.targets = reorder_dataset_by_targets(mnist_train.data, mnist_train.targets)
 mnist_test.data, mnist_test.targets = reorder_dataset_by_targets(mnist_test.data, mnist_test.targets)
 
-# Reduce to subset (TODO: remove this later)
-mnist_train.data = mnist_train.data[:10000]
-mnist_train.targets = mnist_train.targets[:10000]
-mnist_test.data = mnist_test.data  # [:20]
-mnist_test.targets = mnist_test.targets  # [:20]
+# # Reduce to subset
+# mnist_train.data = mnist_train.data[:10000]
+# mnist_train.targets = mnist_train.targets[:10000]
+# mnist_test.data = mnist_test.data[:20]
+# mnist_test.targets = mnist_test.targets[:20]
 
 # Create data loaders
 train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=True)
