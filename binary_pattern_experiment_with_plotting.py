@@ -2,19 +2,20 @@ import json
 import os
 
 import numpy as np
+import torch
 from matplotlib import pyplot as plt
 from pandas import DataFrame as df
 from torch.utils.data import DataLoader
 
 from binary_pattern_dataset import BinaryPatternDataset
 from my_plot_utils import raster_plot_multi_color
-from my_spike_modules import InhibitionArgs, NoiseArgs, LogFiringRateCalculationMode
+from my_spike_modules import InhibitionArgs, NoiseArgs, LogFiringRateCalculationMode, BackgroundOscillationArgs
 from my_utils import set_seed
 from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellConfig, TrainConfig, train_model, \
     TestConfig, test_model
 
 # Experiment name
-experiment_name = "testing"
+experiment_name = "adaptive_simple_osc"
 
 # Set seed
 seed = 4334
@@ -43,10 +44,10 @@ binary_input_variable_cnt = pat_len
 input_neuron_count = binary_input_variable_cnt * 2
 output_neuron_count = distinct_targets.shape[0]
 
-input_osc_args = None  # BackgroundOscillationArgs(1, 20, -torch.pi / 2)
-output_osc_args = None  # BackgroundOscillationArgs(50, 20, -torch.pi / 2)
+input_osc_args = BackgroundOscillationArgs(1, 20, -torch.pi / 2)
+output_osc_args = BackgroundOscillationArgs(50, 20, -torch.pi / 2)
 
-inhibition_args = InhibitionArgs(1000, 0, 2e-3)  # 1000, 0, 5e-3 (classic); 2000, 100, 5e-3 (adaptive)
+inhibition_args = InhibitionArgs(2000, 100, 5e-3)  # 1000, 0, 2e-3 (weak); 2000, 100, 5e-3 (strong)
 noise_args = NoiseArgs(0, 5e-3, 50)
 
 model_config = ModelConfig(
@@ -58,7 +59,7 @@ model_config = ModelConfig(
     encoder_config=EncoderConfig(
         presentation_duration=4e-2,
         delay=1e-2,
-        active_rate=30,
+        active_rate=100,
         inactive_rate=5,
         background_oscillation_args=input_osc_args
     ),
@@ -76,8 +77,8 @@ model_config = ModelConfig(
         background_oscillation_args=output_osc_args,
     ),
 
-    weight_init=0,  # 0 (classic); 2 (adaptive)
-    bias_init=0  # -2 (classic); 2 (adaptive)
+    weight_init=0,
+    bias_init=0
 )
 
 # create folder for experiment

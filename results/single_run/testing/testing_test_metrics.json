@@ -1,0 +1,8 @@
+{
+    "accuracy": 1.0,
+    "rate_accuracy": 1.0,
+    "miss_rate": 0.0,
+    "cross_entropy": 0.044500595898541176,
+    "cross_entropy_paper": 0.042630019064765295,
+    "avg_log_likelihood": -21.307783478200076
+}
