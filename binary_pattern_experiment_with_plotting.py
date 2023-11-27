@@ -14,7 +14,7 @@ from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellCo
     TestConfig, test_model
 
 # Experiment name
-experiment_name = "adaptive_40Hz"
+experiment_name = "testing"
 
 # Set seed
 seed = 4334
@@ -46,7 +46,7 @@ output_neuron_count = distinct_targets.shape[0]
 input_osc_args = None  # BackgroundOscillationArgs(1, 20, -torch.pi / 2)
 output_osc_args = None  # BackgroundOscillationArgs(50, 20, -torch.pi / 2)
 
-inhibition_args = InhibitionArgs(2000, 100, 5e-3)  # 1000, 0, 5e-3 (classic); 2000, 100, 5e-3 (adaptive)
+inhibition_args = InhibitionArgs(1000, 0, 2e-3)  # 1000, 0, 5e-3 (classic); 2000, 100, 5e-3 (adaptive)
 noise_args = NoiseArgs(0, 5e-3, 50)
 
 model_config = ModelConfig(
@@ -58,7 +58,7 @@ model_config = ModelConfig(
     encoder_config=EncoderConfig(
         presentation_duration=4e-2,
         delay=1e-2,
-        active_rate=40,
+        active_rate=30,
         inactive_rate=5,
         background_oscillation_args=input_osc_args
     ),

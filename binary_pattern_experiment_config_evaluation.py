@@ -26,7 +26,7 @@ class BinaryPatternDataConfig:
 
 
 # Set seed
-seed = 5464
+seed = 4341
 set_seed(seed)
 
 # Data config
@@ -64,7 +64,7 @@ output_neuron_count = num_patterns
 input_osc_args = None  # BackgroundOscillationArgs(1, 20, -torch.pi / 2)
 output_osc_args = None  # BackgroundOscillationArgs(50, 20, -torch.pi / 2)
 
-inhibition_args = InhibitionArgs(2000, 100, 5e-3)  # 1000, 0, 5e-3 (classic); 2000, 100, 5e-3 (adaptive)
+inhibition_args = InhibitionArgs(1000, 0, 2e-3)  # 1000, 0, 2e-3 (weak); 2000, 100, 5e-3 (strong)
 noise_args = NoiseArgs(0, 5e-3, 50)
 
 model_config = ModelConfig(
@@ -81,8 +81,8 @@ model_config = ModelConfig(
         background_oscillation_args=input_osc_args
     ),
     stdp_config=STDPConfig(
-        base_mu=2e-1,  # 5e-1 (classic); 2e-1 (adaptive)
-        base_mu_bias=1e-1,  # 5e-1 (classic); 1e-1 (adaptive)
+        base_mu=2e-1,  # [5e-1, 1] (classic); 2e-1 (adaptive)
+        base_mu_bias=2e-1,  # [5e-1, 1] (classic); 2e-1 (adaptive)
         c=1.,
         time_batch_size=5,
         adaptive=True,
@@ -94,8 +94,8 @@ model_config = ModelConfig(
         background_oscillation_args=output_osc_args,
     ),
 
-    weight_init=0,  # 0 (classic); 2 (adaptive)
-    bias_init=-2  # -2 (classic); 2 (adaptive)
+    weight_init=0,
+    bias_init=0
 )
 
 train_config = TrainConfig(
@@ -111,9 +111,6 @@ test_config = TestConfig(
     model_config=model_config,
     print_results=False,
 )
-
-repeats = 5
-seeds = [random.randint(0, 10000) for _ in range(repeats)]
 
 
 def print_eval_results(experiment_name, value, res):
@@ -135,14 +132,33 @@ def print_eval_results(experiment_name, value, res):
     print("---------------------------------\n")
 
 
-def set_inhibition_rest(model_config: ModelConfig, value: float):
+def set_inhibition_rest(model_config: ModelConfig, data_config: BinaryPatternDataConfig, value: float):
     model_config.output_cell_config.inhibition_args.inhibition_rest = value
 
 
-experiment_name = 'inhibition_rest'
-param_name = 'inhibition_rest'
-set_param_func = set_inhibition_rest
-param_values = [0, 25, 50, 75, 100, 125, 150, 175, 200]
+def set_adaptive(model_config: ModelConfig, data_config: BinaryPatternDataConfig, value: bool):
+    if value:
+        model_config.stdp_config.adaptive = True
+        model_config.stdp_config.base_mu = 5e-1
+        model_config.stdp_config.base_mu_bias = 5e-1
+    else:
+        model_config.stdp_config.adaptive = False
+        model_config.stdp_config.base_mu = 1
+        model_config.stdp_config.base_mu_bias = 1
+
+
+repeats = 5
+seeds = [random.randint(0, 10000) for _ in range(repeats)]
+
+# experiment_name = 'inhibition_rest'
+# param_name = 'inhibition_rest'
+# set_param_func = set_inhibition_rest
+# param_values = [0, 25, 50, 75, 100, 125, 150, 175, 200]
+
+experiment_name = 'adaptive_weak_inhibition'
+param_name = 'adaptive'
+set_param_func = set_adaptive
+param_values = [True, False]
 
 # create folder for experiment
 os.makedirs(f'./results/config_eval/{experiment_name}', exist_ok=True)
@@ -162,7 +178,7 @@ dfs = []
 
 # Run experiment
 for val in param_values:
-    set_param_func(model_config, val)
+    set_param_func(model_config, data_config, val)
     train_config.model_config = model_config
     test_config.model_config = model_config
 
@@ -217,18 +233,28 @@ df = pd.concat(dfs)
 df.to_csv(f'./results/config_eval/{experiment_name}/{experiment_name}_{seed}.csv', index=False)
 
 # Plot results as boxplots
+plt.rc('font', size=18)
+boxprops = dict(linestyle='-', linewidth=2, color='k')
+whiskerprops = dict(linestyle='-', linewidth=2, color='k')
+capprops = dict(linestyle='-', linewidth=2, color='k')
+medianprops = dict(linestyle='-', linewidth=2, color='g')
+
 columns = ['accuracy', 'rate_accuracy', 'miss_rate', 'loss', 'loss_paper', 'input_log_likelihood']
 for column in columns:
-    axes = df.boxplot(column=column,
-                      by='value', figsize=(20, 10))
-    axes[0].xlabel(param_name)
-    axes[0].ylabel(column)
+    _ = df.boxplot(column=column,
+                   by='value', figsize=(8, 8),
+                   boxprops=boxprops, whiskerprops=whiskerprops, capprops=capprops, medianprops=medianprops)
+    plt.xlabel(param_name)
+    plt.ylabel(column)
     if column in ['accuracy', 'rate_accuracy', 'miss_rate', 'loss', 'loss_paper']:
         plt.ylim([0, 1])
+    plt.title('')
     plt.suptitle('')
     plt.tight_layout()
-    plt.savefig(f'./results/config_eval/{experiment_name}/{experiment_name}_{seed}_{param_name}.png')
+    plt.savefig(f'./results/config_eval/{experiment_name}/{experiment_name}_{seed}_{column}.png')
     plt.show()
+
+plt.rc('font', size=12)
 
 # plot average train loss
 plt.plot(avg_train_loss, label='Train loss')
