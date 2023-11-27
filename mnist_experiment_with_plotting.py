@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import torch
 from matplotlib import pyplot as plt
@@ -10,14 +12,16 @@ from my_utils import set_seed, ToBinaryTransform, reorder_dataset_by_targets, Fl
 from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellConfig, TrainConfig, train_model, \
     TestConfig, test_model
 
+# Experiment name
+experiment_name = "adaptive_simple_osc"
+
 # Set seed
-seed = 23
+seed = 9665
 set_seed(seed)
 
 # Data config
 batch_size = 10
 data_path = '/tmp/data/mnist'
-
 
 # Data transforms
 transform = transforms.Compose([
@@ -41,8 +45,8 @@ mnist_test.data, mnist_test.targets = reorder_dataset_by_targets(mnist_test.data
 # Reduce to subset (TODO: remove this later)
 mnist_train.data = mnist_train.data[:10000]
 mnist_train.targets = mnist_train.targets[:10000]
-mnist_test.data = mnist_test.data#[:20]
-mnist_test.targets = mnist_test.targets#[:20]
+mnist_test.data = mnist_test.data  # [:20]
+mnist_test.targets = mnist_test.targets  # [:20]
 
 # Create data loaders
 train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=True)
@@ -58,10 +62,10 @@ input_neuron_count = binary_input_variable_cnt * 2
 output_neuron_count = 100
 data_count = mnist_train.data.shape[0]
 
-input_osc_args = None  # TODO BackgroundOscillationArgs(1, 20, -torch.pi / 2)
+input_osc_args = BackgroundOscillationArgs(1, 20, -torch.pi / 2)
 output_osc_args = BackgroundOscillationArgs(50, 20, -torch.pi / 2)
 
-inhibition_args = InhibitionArgs(1000, 0, 5e-3)
+inhibition_args = InhibitionArgs(2000, 100, 5e-3)
 noise_args = NoiseArgs(0, 5e-3, 50)
 
 model_config = ModelConfig(
@@ -73,15 +77,16 @@ model_config = ModelConfig(
     encoder_config=EncoderConfig(
         presentation_duration=4e-2,
         delay=1e-2,
-        active_rate=100,
+        active_rate=100,  # todo: use different values here during experiments
         inactive_rate=0,
         background_oscillation_args=input_osc_args
     ),
     stdp_config=STDPConfig(
-        base_mu=1.,
-        base_mu_bias=0.5,
+        base_mu=2e-1,
+        base_mu_bias=2e-1,
         c=1.,
-        time_batch_size=10
+        time_batch_size=10,
+        adaptive=True,
     ),
     output_cell_config=OutputCellConfig(
         inhibition_args=inhibition_args,
@@ -90,9 +95,16 @@ model_config = ModelConfig(
         background_oscillation_args=output_osc_args,
     ),
 
-    weight_init=1,
-    bias_init=1
+    weight_init=0,
+    bias_init=0
 )
+
+# create folder for experiment
+os.makedirs(f'./results/mnist/{experiment_name}', exist_ok=True)
+
+# save base config
+with open(f'./results/mnist/{experiment_name}/{experiment_name}_base_config.txt', 'w') as f:
+    f.write(str(model_config))
 
 train_config = TrainConfig(
     num_epochs=1,
@@ -133,7 +145,6 @@ weight_tracker = train_results.weights_tracker
 rate_tracker = test_results.rate_tracker
 inhibition_tracker = test_results.inhibition_tracker
 
-
 # Plot
 print("Plotting results...")
 
@@ -156,7 +167,8 @@ total_time_ranges = [[time_range for time_range in time_ranges_per_pattern
                       if time_range[1] <= test_plot_timestep_subset + 1]
                      for time_ranges_per_pattern in total_time_ranges]
 
-inhibition_tracker.plot(subset_steps=test_plot_timestep_subset)
+inhibition_tracker.plot(subset_steps=test_plot_timestep_subset,
+                        save_path=f'./results/mnist/{experiment_name}/{experiment_name}_{seed}_inhibition.png')
 
 plt.plot(train_time_steps, train_results.cross_entropy_hist, label='Crossentropy')
 plt.plot(train_time_steps, train_results.cross_entropy_paper_hist, label='Paper Crossentropy')
@@ -165,16 +177,26 @@ plt.xlabel('Time [s]')
 plt.ylabel('Normalized Conditional Crossentropy')
 plt.ylim([0, 1])
 plt.legend()
+plt.savefig(f'./results/mnist/{experiment_name}/{experiment_name}_{seed}_cross_entropy.png')
 plt.show()
 
-plt.plot(train_data_time_steps, train_results.input_log_likelihood_hist, label='Input log likelihood')
-# plt.axhline(y=np.log(1. / data_count), color='r', linestyle='-', label='Maximum Avg. Input Log Likelihood')
+input_log_likelihood_df = df.from_dict({
+    'ts': train_data_time_steps,
+    'log_l': train_results.input_log_likelihood_hist,
+})
+
+rolling_mean = input_log_likelihood_df.log_l.rolling(window=10).mean()
+rolling_std = input_log_likelihood_df.log_l.rolling(window=10).std()
+
+# plt.plot(train_data_time_steps, train_results.input_log_likelihood_hist, label='Input log likelihood')
+plt.plot(train_data_time_steps, rolling_mean, label='Input log likelihood')
+plt.fill_between(train_data_time_steps, rolling_mean - rolling_std, rolling_mean + rolling_std, alpha=0.2)
 plt.title('Training')
 plt.xlabel('Time [s]')
 plt.ylabel('Input log likelihood')
-#plt.legend()
+plt.savefig(f'./results/mnist/{experiment_name}/{experiment_name}_{seed}_input_log_likelihood.png')
+# plt.legend()
 plt.show()
-
 
 cmap = plt.get_cmap("tab10")
 group_colors = [cmap(i) for i in range(distinct_targets.shape[0])]
@@ -205,19 +227,46 @@ plt.ylabel('Neuron')
 plt.subplot(3, 1, 3)
 plt.gca().sharex(first_ax)
 neuron_colors = [group_colors[idx] for idx in train_results.neuron_pattern_mapping]
-rate_tracker.plot_relative_firing_rates(plt.gca(), colors=neuron_colors, subset_steps=test_plot_timestep_subset, legend=False)
+rate_tracker.plot_relative_firing_rates(plt.gca(), colors=neuron_colors,
+                                        subset_steps=test_plot_timestep_subset,
+                                        legend=False)
 
 plt.tight_layout()
+plt.savefig(f'./results/mnist/{experiment_name}/{experiment_name}_{seed}_spike_history.png')
 plt.show()
 
-learning_rates_tracker.plot()
+learning_rates_tracker.plot(
+    save_path=f'./results/mnist/{experiment_name}/{experiment_name}_{seed}_learning_rates.png',
+    legend=True)
 
 # visualize bias convergence
-weight_tracker.plot_bias_convergence(target_biases=[np.log(1. / output_neuron_count) for _ in range(output_neuron_count)],
-                                     colors=neuron_colors, exp=False)
+weight_tracker.plot_bias_convergence(
+    target_biases=[np.log(1. / output_neuron_count) for _ in range(output_neuron_count)],
+    colors=neuron_colors, exp=False,
+    save_path=f'./results/mnist/{experiment_name}/{experiment_name}_{seed}_bias_convergence.png',
+    legend=False)
 
 # visualize normalized exponential of weights in appropriate grid (10x10 for 100 output neurons)
 grid_width = np.ceil(np.sqrt(output_neuron_count))
 grid_height = np.ceil(output_neuron_count / grid_width)
 
-weight_tracker.plot_final_weight_visualization((grid_width, grid_height), (width, height))
+weight_tracker.plot_final_weight_visualization((grid_width, grid_height), (width, height),
+                                               save_path=f'./results/mnist/{experiment_name}/{experiment_name}_{seed}_weight_visualization.png')
+
+test_metrics = {
+    'accuracy': test_results.accuracy,
+    'rate_accuracy': test_results.rate_accuracy,
+    'miss_rate': test_results.miss_rate,
+    'cross_entropy': test_results.cross_entropy,
+    'cross_entropy_paper': test_results.cross_entropy_paper,
+    'avg_log_likelihood': test_results.average_input_log_likelihood
+}
+
+with open(f'./results/mnist/{experiment_name}/{experiment_name}_test_metrics.json', 'w') as f:
+    json.dump(test_metrics, f, indent=4)
+
+with open(f'./results/mnist/{experiment_name}/{experiment_name}_train_timing_info.txt', 'w') as f:
+    f.write(train_results.timing_info)
+
+with open(f'./results/mnist/{experiment_name}/{experiment_name}_test_timing_info.txt', 'w') as f:
+    f.write(test_results.timing_info)
