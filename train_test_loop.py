@@ -342,7 +342,7 @@ def test_model(config: TestConfig, data_loader):
 
     total_acc_rate = np.mean(pred_rates == targets_concat)
 
-    joint_probs = get_joint_probabilities_from_counts(cumulative_counts[-1], epsilon=1e-5)
+    joint_probs = get_joint_probabilities_from_counts(cumulative_counts[-1], epsilon=1e-1)
     cond_cross_entropy = normalized_conditional_cross_entropy(joint_probs)
     cond_cross_entropy_paper = normalized_conditional_cross_entropy_paper(joint_probs)
 

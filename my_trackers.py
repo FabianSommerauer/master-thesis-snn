@@ -174,6 +174,8 @@ class LearningRatesTracker:
 
         for i in range(mu_w_hist_mean.shape[-1]):
             plt.plot(mu_w_hist_mean[:, i], label=f'mu_w {i}')
+        for j in range(mu_b_history.shape[-1]):
+            plt.plot(mu_b_history[:, j], label=f'mu_b {i}')
         plt.plot(mu_b_hist_mean, label='mu_b')
 
         plt.yscale('log')

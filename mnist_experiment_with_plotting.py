@@ -15,7 +15,7 @@ from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellCo
     TestConfig, test_model
 
 # Experiment name
-experiment_name = "adaptive_simple"
+experiment_name = "adaptive_harder"
 
 # Set seed
 seed = 9665
@@ -44,11 +44,11 @@ _, width, height = mnist_train.data.shape
 mnist_train.data, mnist_train.targets = reorder_dataset_by_targets(mnist_train.data, mnist_train.targets)
 mnist_test.data, mnist_test.targets = reorder_dataset_by_targets(mnist_test.data, mnist_test.targets)
 
-# # Reduce to subset
-# mnist_train.data = mnist_train.data[:10000]
-# mnist_train.targets = mnist_train.targets[:10000]
-# mnist_test.data = mnist_test.data[:20]
-# mnist_test.targets = mnist_test.targets[:20]
+# Reduce to subset
+mnist_train.data = mnist_train.data[:10000]
+mnist_train.targets = mnist_train.targets[:10000]
+mnist_test.data = mnist_test.data[:20]
+mnist_test.targets = mnist_test.targets[:20]
 
 # Create data loaders
 train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=True)
@@ -79,12 +79,12 @@ model_config = ModelConfig(
     encoder_config=EncoderConfig(
         presentation_duration=4e-2,
         delay=1e-2,
-        active_rate=100,  # todo: use different values here during experiments
-        inactive_rate=0,
+        active_rate=40,  # todo: increase for testing
+        inactive_rate=5,
         background_oscillation_args=input_osc_args
     ),
     stdp_config=STDPConfig(
-        base_mu=5e-2,
+        base_mu=2e-1,
         base_mu_bias=5e-2,
         c=1.,
         time_batch_size=10,
@@ -239,7 +239,7 @@ plt.show()
 
 learning_rates_tracker.plot(
     save_path=f'./results/mnist/{experiment_name}/{experiment_name}_{seed}_learning_rates.png',
-    legend=True)
+    legend=False)
 
 # visualize bias convergence
 weight_tracker.plot_bias_convergence(
