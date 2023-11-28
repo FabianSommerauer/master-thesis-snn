@@ -84,8 +84,8 @@ model_config = ModelConfig(
         background_oscillation_args=input_osc_args
     ),
     stdp_config=STDPConfig(
-        base_mu=2e-1,
-        base_mu_bias=2e-1,
+        base_mu=5e-2,
+        base_mu_bias=5e-2,
         c=1.,
         time_batch_size=10,
         adaptive=True,
