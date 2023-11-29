@@ -15,7 +15,7 @@ from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellCo
     TestConfig, test_model
 
 # Experiment name
-experiment_name = "adaptive_harder"
+experiment_name = "classic_simple"
 
 # Set seed
 seed = 9665
@@ -79,16 +79,16 @@ model_config = ModelConfig(
     encoder_config=EncoderConfig(
         presentation_duration=4e-2,
         delay=1e-2,
-        active_rate=40,  # todo: increase for testing
-        inactive_rate=5,
+        active_rate=100,
+        inactive_rate=2,
         background_oscillation_args=input_osc_args
     ),
     stdp_config=STDPConfig(
-        base_mu=2e-1,
-        base_mu_bias=5e-2,
+        base_mu=1,
+        base_mu_bias=1,
         c=1.,
         time_batch_size=10,
-        adaptive=True,
+        adaptive=False,
     ),
     output_cell_config=OutputCellConfig(
         inhibition_args=inhibition_args,
