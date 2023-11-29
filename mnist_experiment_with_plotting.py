@@ -15,7 +15,7 @@ from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellCo
     TestConfig, test_model
 
 # Experiment name
-experiment_name = "adaptive_simpler_non_binary_strong_inhibition"
+experiment_name = "adaptive_simpler_binary_strong_inhibition"
 
 # Set seed
 seed = 9665
@@ -31,7 +31,7 @@ transform = transforms.Compose([
     transforms.Grayscale(),
     transforms.ToTensor(),
     transforms.Normalize((0,), (1,)),
-    # ToBinaryTransform(0.5),
+    ToBinaryTransform(0.5),
     FlattenTransform()
 ])
 

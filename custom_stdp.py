@@ -58,7 +58,6 @@ class BayesianSTDPAdaptive(nn.Module):
                  min_mu_weights: float = 1e-10,
                  min_mu_bias: float = 1e-10,
                  max_delta: float = 1e1,
-                 moment_update_factor: float = 1e-3,
                  collect_history: bool = False):
         super().__init__()
         self.input_size = input_size
@@ -74,7 +73,6 @@ class BayesianSTDPAdaptive(nn.Module):
         self.min_mu_weights = min_mu_weights
         self.min_mu_bias = min_mu_bias
         self.max_delta = max_delta
-        self.moment_update_factor = moment_update_factor
 
         self.time_batch_size = time_batch_size
 
@@ -95,8 +93,7 @@ class BayesianSTDPAdaptive(nn.Module):
                 self.lr_state, self.c,
                 self.time_batch_size,
                 self.min_mu_weights, self.min_mu_bias,
-                self.max_delta,
-                self.moment_update_factor)
+                self.max_delta)
 
             mu_w, _, _, mu_b, _, _ = self.lr_state
             # collect learning rates for plotting
