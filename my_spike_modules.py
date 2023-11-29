@@ -267,7 +267,7 @@ class StochasticOutputNeuronCell(nn.Module):
             inhibition, noise = inhibition_state
 
             log_rates = inputs - inhibition + noise
-            relative_input_rates = torch.exp(inputs - torch.logsumexp(inputs, dim=-1, keepdim=True))
+            relative_input_rates = torch.exp((inputs - torch.logsumexp(inputs, dim=-1, keepdim=True))/50.)
 
             with Timer('rate_track'):
                 # collect rates for plotting

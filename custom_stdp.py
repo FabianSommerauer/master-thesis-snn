@@ -55,8 +55,8 @@ class BayesianSTDPAdaptive(nn.Module):
                  time_batch_size: int = 10,
                  base_mu: float = 1.,
                  base_mu_bias: float = 0.5,
-                 min_mu_weights: float = 1e-6,
-                 min_mu_bias: float = 1e-6,
+                 min_mu_weights: float = 1e-10,
+                 min_mu_bias: float = 1e-10,
                  max_delta: float = 2e0,
                  moment_update_factor: float = 1e-3,
                  collect_history: bool = False):
@@ -246,7 +246,7 @@ def apply_bayesian_stdp_with_learning_rate_update(
     return weights, biases, N_k
 
 
-@torch.jit.script
+#@torch.jit.script
 def apply_bayesian_stdp_with_adaptive_learning_rate_update(
         input_psp: torch.Tensor,
         output_spikes: torch.Tensor,
@@ -258,8 +258,8 @@ def apply_bayesian_stdp_with_adaptive_learning_rate_update(
         torch.Tensor, torch.Tensor, torch.Tensor]] = None,
         c: float = 1,
         time_batch_size: int = 10,
-        min_mu_weights: float = 1e-6,
-        min_mu_bias: float = 1e-6,
+        min_mu_weights: float = 1e-10,
+        min_mu_bias: float = 1e-10,
         max_delta: float = 1e1,
         moment_update_factor: float = 1e-3,
 ) -> Tuple[torch.Tensor, torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor,
@@ -344,16 +344,15 @@ torch.Tensor, torch.Tensor, torch.Tensor]]:
         # applies to all neurons (if at least one fired)
         db = bias_bumps - total_out_spikes_sum[i]
 
-        delta_weights = torch.clip(mu_weights * dw
-                                   , -max_delta, max_delta)
-        delta_biases = torch.clip(mu_bias * db
-                                  , -max_delta, max_delta)
+        delta_weights = mu_weights * dw
+        delta_biases = mu_bias * db
 
         weights += delta_weights
         biases += delta_biases
 
-        weight_interpolation_factor = 1 - torch.exp(-moment_update_factor * total_out_spikes[i, :, None])
-        bias_interpolation_factor = 1 - torch.exp(-moment_update_factor * total_out_spikes_sum[i])
+        # todo: check if clipping is necessary / beneficial
+        weight_interpolation_factor = 1 - torch.exp(-mu_weights * torch.clip(total_out_spikes[i, :, None], 0, 1))
+        bias_interpolation_factor = 1 - torch.exp(-mu_bias * torch.clip(total_out_spikes_sum[i], 0, 1))
 
         # update moments and learning rates
         weight_first_moment = (weight_interpolation_factor * weights
@@ -370,8 +369,8 @@ torch.Tensor, torch.Tensor, torch.Tensor]]:
         mu_weights = (weight_second_moment - weight_first_moment ** 2) / (torch.exp(-weight_first_moment) + 1.0)
         mu_bias = (bias_second_moment - bias_first_moment ** 2) / (torch.exp(-bias_first_moment) + 1.0)
 
-        mu_weights = torch.clip(mu_weights, min_mu_weights, base_mu_weights)
-        mu_bias = torch.clip(mu_bias, min_mu_bias, base_mu_bias)
+        # mu_weights = torch.clip(mu_weights, min_mu_weights, base_mu_weights)
+        # mu_bias = torch.clip(mu_bias, min_mu_bias, base_mu_bias)
 
     lr_state = (mu_weights, weight_first_moment, weight_second_moment,
                 mu_bias, bias_first_moment, bias_second_moment)

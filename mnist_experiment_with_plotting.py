@@ -10,12 +10,12 @@ from torchvision import transforms, datasets
 
 from my_plot_utils import raster_plot_multi_color
 from my_spike_modules import BackgroundOscillationArgs, InhibitionArgs, NoiseArgs, LogFiringRateCalculationMode
-from my_utils import set_seed, ToBinaryTransform, reorder_dataset_by_targets, FlattenTransform
+from my_utils import set_seed, reorder_dataset_by_targets, FlattenTransform
 from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellConfig, TrainConfig, train_model, \
     TestConfig, test_model
 
 # Experiment name
-experiment_name = "classic_simple"
+experiment_name = "adaptive_simple_non_binary_weak_inhibition"
 
 # Set seed
 seed = 9665
@@ -31,7 +31,7 @@ transform = transforms.Compose([
     transforms.Grayscale(),
     transforms.ToTensor(),
     transforms.Normalize((0,), (1,)),
-    ToBinaryTransform(0.5),  # todo: test without this
+    #ToBinaryTransform(0.5),  # todo: test without this
     FlattenTransform()
 ])
 
@@ -67,7 +67,7 @@ data_count = mnist_train.data.shape[0]
 input_osc_args = BackgroundOscillationArgs(1, 20, -torch.pi / 2)
 output_osc_args = BackgroundOscillationArgs(50, 20, -torch.pi / 2)
 
-inhibition_args = InhibitionArgs(2000, 100, 5e-3)
+inhibition_args = InhibitionArgs(2000, 50, 5e-3)
 noise_args = NoiseArgs(0, 5e-3, 50)
 
 model_config = ModelConfig(
@@ -80,15 +80,15 @@ model_config = ModelConfig(
         presentation_duration=4e-2,
         delay=1e-2,
         active_rate=100,
-        inactive_rate=2,
+        inactive_rate=5,
         background_oscillation_args=input_osc_args
     ),
     stdp_config=STDPConfig(
-        base_mu=1,
-        base_mu_bias=1,
+        base_mu=5e-1,
+        base_mu_bias=5e-1,
         c=1.,
         time_batch_size=10,
-        adaptive=False,
+        adaptive=True,
     ),
     output_cell_config=OutputCellConfig(
         inhibition_args=inhibition_args,
