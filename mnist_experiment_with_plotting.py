@@ -10,12 +10,12 @@ from torchvision import transforms, datasets
 
 from my_plot_utils import raster_plot_multi_color
 from my_spike_modules import BackgroundOscillationArgs, InhibitionArgs, NoiseArgs, LogFiringRateCalculationMode
-from my_utils import set_seed, reorder_dataset_by_targets, FlattenTransform
+from my_utils import set_seed, reorder_dataset_by_targets, FlattenTransform, ToBinaryTransform
 from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellConfig, TrainConfig, train_model, \
     TestConfig, test_model
 
 # Experiment name
-experiment_name = "adaptive_simple_non_binary_strong_inhibition"
+experiment_name = "adaptive_simpler_non_binary_strong_inhibition"
 
 # Set seed
 seed = 9665
@@ -31,7 +31,7 @@ transform = transforms.Compose([
     transforms.Grayscale(),
     transforms.ToTensor(),
     transforms.Normalize((0,), (1,)),
-    #ToBinaryTransform(0.5),  # todo: test without this
+    # ToBinaryTransform(0.5),
     FlattenTransform()
 ])
 
@@ -47,12 +47,12 @@ mnist_test.data, mnist_test.targets = reorder_dataset_by_targets(mnist_test.data
 # Reduce to subset
 mnist_train.data = mnist_train.data[:10000]
 mnist_train.targets = mnist_train.targets[:10000]
-mnist_test.data = mnist_test.data[:20]
-mnist_test.targets = mnist_test.targets[:20]
+mnist_test.data = mnist_test.data[:100]
+mnist_test.targets = mnist_test.targets[:100]
 
 # Create data loaders
 train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=True)
-test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=True)
+test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=False)
 
 distinct_targets = mnist_train.targets.unique().cpu().numpy()
 
@@ -80,7 +80,7 @@ model_config = ModelConfig(
         presentation_duration=4e-2,
         delay=1e-2,
         active_rate=100,
-        inactive_rate=5,
+        inactive_rate=0,
         background_oscillation_args=input_osc_args
     ),
     stdp_config=STDPConfig(

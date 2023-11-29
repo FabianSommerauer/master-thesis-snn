@@ -246,7 +246,7 @@ def apply_bayesian_stdp_with_learning_rate_update(
     return weights, biases, N_k
 
 
-#@torch.jit.script
+@torch.jit.script
 def apply_bayesian_stdp_with_adaptive_learning_rate_update(
         input_psp: torch.Tensor,
         output_spikes: torch.Tensor,
@@ -261,7 +261,6 @@ def apply_bayesian_stdp_with_adaptive_learning_rate_update(
         min_mu_weights: float = 1e-10,
         min_mu_bias: float = 1e-10,
         max_delta: float = 1e1,
-        moment_update_factor: float = 1e-3,
 ) -> Tuple[torch.Tensor, torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor,
 torch.Tensor, torch.Tensor, torch.Tensor]]:
     """STDP step for bayesian computation with adaptive learning rates. Uses variance tracking.
@@ -352,7 +351,7 @@ torch.Tensor, torch.Tensor, torch.Tensor]]:
         weights += delta_weights
         biases += delta_biases
 
-        # todo: check if clipping is necessary / beneficial
+        # calculate appropriate interpolation factor based on learning rates (only for active neurons)
         weight_interpolation_factor = 1 - torch.exp(-mu_weights * torch.clip(total_out_spikes[i, :, None], 0, 1))
         bias_interpolation_factor = 1 - torch.exp(-mu_bias * torch.clip(total_out_spikes_sum[i], 0, 1))
 
