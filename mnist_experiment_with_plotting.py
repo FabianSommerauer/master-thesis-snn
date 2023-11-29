@@ -15,7 +15,7 @@ from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellCo
     TestConfig, test_model
 
 # Experiment name
-experiment_name = "adaptive_simple_non_binary_weak_inhibition"
+experiment_name = "adaptive_simple_non_binary_strong_inhibition"
 
 # Set seed
 seed = 9665
@@ -67,7 +67,7 @@ data_count = mnist_train.data.shape[0]
 input_osc_args = BackgroundOscillationArgs(1, 20, -torch.pi / 2)
 output_osc_args = BackgroundOscillationArgs(50, 20, -torch.pi / 2)
 
-inhibition_args = InhibitionArgs(2000, 50, 5e-3)
+inhibition_args = InhibitionArgs(2000, 50, 2e-3)
 noise_args = NoiseArgs(0, 5e-3, 50)
 
 model_config = ModelConfig(
@@ -84,8 +84,8 @@ model_config = ModelConfig(
         background_oscillation_args=input_osc_args
     ),
     stdp_config=STDPConfig(
-        base_mu=5e-1,
-        base_mu_bias=5e-1,
+        base_mu=2e-1,
+        base_mu_bias=2e-1,
         c=1.,
         time_batch_size=10,
         adaptive=True,

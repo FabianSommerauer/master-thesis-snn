@@ -57,7 +57,7 @@ class BayesianSTDPAdaptive(nn.Module):
                  base_mu_bias: float = 0.5,
                  min_mu_weights: float = 1e-10,
                  min_mu_bias: float = 1e-10,
-                 max_delta: float = 2e0,
+                 max_delta: float = 1e1,
                  moment_update_factor: float = 1e-3,
                  collect_history: bool = False):
         super().__init__()
@@ -344,8 +344,10 @@ torch.Tensor, torch.Tensor, torch.Tensor]]:
         # applies to all neurons (if at least one fired)
         db = bias_bumps - total_out_spikes_sum[i]
 
-        delta_weights = mu_weights * dw
-        delta_biases = mu_bias * db
+        delta_weights = torch.clip(mu_weights * dw
+                                   , -max_delta, max_delta)
+        delta_biases = torch.clip(mu_bias * db
+                                  , -max_delta, max_delta)
 
         weights += delta_weights
         biases += delta_biases
@@ -369,8 +371,8 @@ torch.Tensor, torch.Tensor, torch.Tensor]]:
         mu_weights = (weight_second_moment - weight_first_moment ** 2) / (torch.exp(-weight_first_moment) + 1.0)
         mu_bias = (bias_second_moment - bias_first_moment ** 2) / (torch.exp(-bias_first_moment) + 1.0)
 
-        # mu_weights = torch.clip(mu_weights, min_mu_weights, base_mu_weights)
-        # mu_bias = torch.clip(mu_bias, min_mu_bias, base_mu_bias)
+        mu_weights = torch.clip(mu_weights, min_mu_weights, base_mu_weights)
+        mu_bias = torch.clip(mu_bias, min_mu_bias, base_mu_bias)
 
     lr_state = (mu_weights, weight_first_moment, weight_second_moment,
                 mu_bias, bias_first_moment, bias_second_moment)
