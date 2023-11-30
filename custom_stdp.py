@@ -55,9 +55,9 @@ class BayesianSTDPAdaptive(nn.Module):
                  time_batch_size: int = 10,
                  base_mu: float = 1.,
                  base_mu_bias: float = 0.5,
-                 min_mu_weights: float = 1e-10,
-                 min_mu_bias: float = 1e-10,
-                 max_delta: float = 1e1,
+                 min_mu_weights: float = 1e-6,
+                 min_mu_bias: float = 1e-6,
+                 max_delta: float = 1e0,
                  collect_history: bool = False):
         super().__init__()
         self.input_size = input_size

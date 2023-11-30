@@ -15,18 +15,18 @@ from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellCo
     TestConfig, test_model
 
 # Experiment name
-experiment_name = "adaptive_simple_osc"
+experiment_name = "testing"
 
 # Set seed
-seed = 4334
+seed = 7756
 set_seed(seed)
 
 # Data config
 batch_size = 1
-num_patterns = 5
+num_patterns = 10
 num_repeats_train = 100
-num_repeats_test = 4
-pattern_length = 100
+num_repeats_test = 10
+pattern_length = 300
 pattern_sparsity = 0.5
 
 # Load data
@@ -44,8 +44,8 @@ binary_input_variable_cnt = pat_len
 input_neuron_count = binary_input_variable_cnt * 2
 output_neuron_count = distinct_targets.shape[0]
 
-input_osc_args = BackgroundOscillationArgs(1, 20, -torch.pi / 2)
-output_osc_args = BackgroundOscillationArgs(50, 20, -torch.pi / 2)
+input_osc_args = None  # BackgroundOscillationArgs(1, 20, -torch.pi / 2)
+output_osc_args = None  # BackgroundOscillationArgs(50, 20, -torch.pi / 2)
 
 inhibition_args = InhibitionArgs(2000, 100, 5e-3)  # 1000, 0, 2e-3 (weak); 2000, 100, 5e-3 (strong)
 noise_args = NoiseArgs(0, 5e-3, 50)
@@ -59,13 +59,13 @@ model_config = ModelConfig(
     encoder_config=EncoderConfig(
         presentation_duration=4e-2,
         delay=1e-2,
-        active_rate=100,
+        active_rate=30,
         inactive_rate=5,
         background_oscillation_args=input_osc_args
     ),
     stdp_config=STDPConfig(
-        base_mu=2e-1,  # 5e-1 (classic); 2e-1 (adaptive)  (low values will make bias convergence more visible)
-        base_mu_bias=2e-1,  # 5e-1 (classic); 1e-1 (adaptive)
+        base_mu=5e-1,  # 5e-1 (classic); 2e-1 (adaptive)  (low values will make bias convergence more visible)
+        base_mu_bias=5e-1,  # 5e-1 (classic); 1e-1 (adaptive)
         c=1.,
         time_batch_size=5,
         adaptive=True,

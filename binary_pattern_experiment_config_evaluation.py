@@ -62,8 +62,8 @@ binary_input_variable_cnt = pattern_length
 input_neuron_count = binary_input_variable_cnt * 2
 output_neuron_count = num_patterns
 
-input_osc_args = BackgroundOscillationArgs(1, 20, -torch.pi / 2)
-output_osc_args = BackgroundOscillationArgs(50, 20, -torch.pi / 2)
+input_osc_args = None #BackgroundOscillationArgs(1, 20, -torch.pi / 2)
+output_osc_args = None #BackgroundOscillationArgs(50, 20, -torch.pi / 2)
 
 inhibition_args = InhibitionArgs(2000, 100, 5e-3)  # 1000, 0, 2e-3 (weak); 2000, 100, 5e-3 (strong)
 noise_args = NoiseArgs(0, 5e-3, 50)
@@ -82,8 +82,8 @@ model_config = ModelConfig(
         background_oscillation_args=input_osc_args
     ),
     stdp_config=STDPConfig(
-        base_mu=4e-1,  # [5e-1, 1] (classic); 2e-1 (adaptive)
-        base_mu_bias=4e-1,  # [5e-1, 1] (classic); 2e-1 (adaptive)
+        base_mu=5e-1,  # [5e-1, 1] (classic); 2e-1 (adaptive)
+        base_mu_bias=5e-1,  # [5e-1, 1] (classic); 2e-1 (adaptive)
         c=1.,
         time_batch_size=5,
         adaptive=True,
@@ -140,8 +140,8 @@ def set_inhibition_rest(model_config: ModelConfig, data_config: BinaryPatternDat
 def set_adaptive(model_config: ModelConfig, data_config: BinaryPatternDataConfig, value: bool):
     if value:
         model_config.stdp_config.adaptive = True
-        model_config.stdp_config.base_mu = 5e-1
-        model_config.stdp_config.base_mu_bias = 5e-1
+        model_config.stdp_config.base_mu = 4e-1
+        model_config.stdp_config.base_mu_bias = 4e-1
     else:
         model_config.stdp_config.adaptive = False
         model_config.stdp_config.base_mu = 1
@@ -174,17 +174,17 @@ seeds = [random.randint(0, 10000) for _ in range(repeats)]
 # param_values = [0, 25, 50, 75, 100, 125, 150, 175, 200]
 # values_categorical = False
 
-# experiment_name = 'adaptive_weak_inhibition'
-# param_name = 'adaptive'
-# set_param_func = set_adaptive
-# param_values = [True, False]
-# values_categorical = True
-
-experiment_name = 'background_oscillation'
-param_name = 'Oscillation Type'
-set_param_func = set_background_oscillation
-param_values = ['None', 'Input Only', 'Output Only', 'Both']
+experiment_name = 'adaptive_strong_inhibition'
+param_name = 'adaptive'
+set_param_func = set_adaptive
+param_values = [True, False]
 values_categorical = True
+
+# experiment_name = 'background_oscillation'
+# param_name = 'Oscillation Type'
+# set_param_func = set_background_oscillation
+# param_values = ['None', 'Input Only', 'Output Only', 'Both']
+# values_categorical = True
 
 # create folder for experiment
 os.makedirs(f'./results/config_eval/{experiment_name}', exist_ok=True)
