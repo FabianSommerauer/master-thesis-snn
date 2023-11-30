@@ -34,13 +34,11 @@ class BackgroundOscillationArgs:
     osc_phase: float
 
 
-class LogFiringRateCalculationMode(Enum):
-    Default = 0  # inputs + noise - inhibition
-    IgnoreInputs = 1  # noise - inhibition
-    ExpectedInputCorrected = 2  # inputs - mean(inputs) + noise - inhibition
+class LogFiringRateCalculationMode(str, Enum):
+    Default = 'Default'  # inputs + noise - inhibition
+    IgnoreInputs = 'IgnoreInputs'  # noise - inhibition
+    ExpectedInputCorrected = 'ExpectedInputCorrected'  # inputs - mean(inputs) + noise - inhibition
 
-
-# todo: check whether torch.no_grad() or detach() is needed in classes below
 
 class SpikePopulationGroupEncoder(nn.Module):
     def __init__(self, seq_length, active_rate=100.0, inactive_rate=0.0, dt=0.001):

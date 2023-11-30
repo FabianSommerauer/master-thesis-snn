@@ -1,0 +1,6 @@
+{
+    "dt": 0.001,
+    "input_neuron_count": 600,
+    "output_neuron_count": 10,
+    "sigma": 0.005,
+    "encoder_config": 

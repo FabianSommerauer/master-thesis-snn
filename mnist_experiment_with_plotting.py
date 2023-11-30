@@ -12,7 +12,7 @@ from my_plot_utils import raster_plot_multi_color
 from my_spike_modules import BackgroundOscillationArgs, InhibitionArgs, NoiseArgs, LogFiringRateCalculationMode
 from my_utils import set_seed, reorder_dataset_by_targets, FlattenTransform, ToBinaryTransform
 from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellConfig, TrainConfig, train_model, \
-    TestConfig, test_model
+    TestConfig, test_model, STDPAdaptiveConfig
 
 # Experiment name
 experiment_name = "adaptive_simpler_binary_strong_inhibition"
@@ -23,6 +23,7 @@ set_seed(seed)
 
 # Data config
 batch_size = 10
+shuffle_train = True
 data_path = '/tmp/data/mnist'
 
 # Data transforms
@@ -51,7 +52,7 @@ mnist_test.data = mnist_test.data[:100]
 mnist_test.targets = mnist_test.targets[:100]
 
 # Create data loaders
-train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=True)
+train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=shuffle_train)
 test_loader = DataLoader(mnist_test, batch_size=batch_size, shuffle=False)
 
 distinct_targets = mnist_train.targets.unique().cpu().numpy()
@@ -84,11 +85,10 @@ model_config = ModelConfig(
         background_oscillation_args=input_osc_args
     ),
     stdp_config=STDPConfig(
-        base_mu=2e-1,
-        base_mu_bias=2e-1,
         c=1.,
         time_batch_size=10,
-        adaptive=True,
+        method=STDPAdaptiveConfig(base_mu=2e-1, base_mu_bias=2e-1)
+        # method=STDPClassicConfig(base_mu=1., base_mu_bias=1.)
     ),
     output_cell_config=OutputCellConfig(
         inhibition_args=inhibition_args,
@@ -107,6 +107,13 @@ os.makedirs(f'./results/mnist/{experiment_name}', exist_ok=True)
 # save base config
 with open(f'./results/mnist/{experiment_name}/{experiment_name}_base_config.txt', 'w') as f:
     f.write(str(model_config))
+with open(f'./results/mnist/{experiment_name}/{experiment_name}_data_config.json', 'w') as f:
+    json.dump({
+        'batch_size': batch_size,
+        'num_patterns_train': mnist_train.data.shape[0],
+        'num_patterns_test': mnist_test.data.shape[0],
+        'shuffle_train': shuffle_train,
+    }, f, indent=4)
 
 train_config = TrainConfig(
     num_epochs=1,

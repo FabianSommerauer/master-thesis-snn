@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import os
 import random
@@ -6,14 +7,13 @@ from dataclasses import dataclass
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import torch
 from torch.utils.data import DataLoader
 
 from binary_pattern_dataset import BinaryPatternDataset
-from my_spike_modules import InhibitionArgs, NoiseArgs, LogFiringRateCalculationMode, BackgroundOscillationArgs
+from my_spike_modules import InhibitionArgs, NoiseArgs, LogFiringRateCalculationMode
 from my_utils import set_seed
 from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellConfig, TrainConfig, TestConfig, \
-    evaluate_config
+    evaluate_config, STDPAdaptiveConfig, STDPClassicConfig
 
 
 @dataclass
@@ -62,8 +62,8 @@ binary_input_variable_cnt = pattern_length
 input_neuron_count = binary_input_variable_cnt * 2
 output_neuron_count = num_patterns
 
-input_osc_args = None #BackgroundOscillationArgs(1, 20, -torch.pi / 2)
-output_osc_args = None #BackgroundOscillationArgs(50, 20, -torch.pi / 2)
+input_osc_args = None  # BackgroundOscillationArgs(1, 20, -torch.pi / 2)
+output_osc_args = None  # BackgroundOscillationArgs(50, 20, -torch.pi / 2)
 
 inhibition_args = InhibitionArgs(2000, 100, 5e-3)  # 1000, 0, 2e-3 (weak); 2000, 100, 5e-3 (strong)
 noise_args = NoiseArgs(0, 5e-3, 50)
@@ -78,15 +78,14 @@ model_config = ModelConfig(
         presentation_duration=4e-2,
         delay=1e-2,
         active_rate=30,
-        inactive_rate=10,
+        inactive_rate=5,
         background_oscillation_args=input_osc_args
     ),
     stdp_config=STDPConfig(
-        base_mu=5e-1,  # [5e-1, 1] (classic); 2e-1 (adaptive)
-        base_mu_bias=5e-1,  # [5e-1, 1] (classic); 2e-1 (adaptive)
         c=1.,
         time_batch_size=5,
-        adaptive=True,
+        method=STDPAdaptiveConfig(base_mu=5e-1, base_mu_bias=5e-1)
+        # method=STDPClassicConfig(base_mu=1., base_mu_bias=1.)
     ),
     output_cell_config=OutputCellConfig(
         inhibition_args=inhibition_args,
@@ -139,13 +138,9 @@ def set_inhibition_rest(model_config: ModelConfig, data_config: BinaryPatternDat
 
 def set_adaptive(model_config: ModelConfig, data_config: BinaryPatternDataConfig, value: bool):
     if value:
-        model_config.stdp_config.adaptive = True
-        model_config.stdp_config.base_mu = 4e-1
-        model_config.stdp_config.base_mu_bias = 4e-1
+        model_config.stdp_config.method = STDPAdaptiveConfig(base_mu=5e-1, base_mu_bias=5e-1)
     else:
-        model_config.stdp_config.adaptive = False
-        model_config.stdp_config.base_mu = 1
-        model_config.stdp_config.base_mu_bias = 1
+        model_config.stdp_config.method = STDPClassicConfig(base_mu=1., base_mu_bias=1.)
 
 
 def set_background_oscillation(model_config: ModelConfig, data_config: BinaryPatternDataConfig, value: str):
@@ -190,8 +185,10 @@ values_categorical = True
 os.makedirs(f'./results/config_eval/{experiment_name}', exist_ok=True)
 
 # save base config
-with open(f'./results/config_eval/{experiment_name}/{experiment_name}_base_config.txt', 'w') as f:
-    f.write(str(model_config))
+with open(f'./results/config_eval/{experiment_name}/{experiment_name}_base_config.json', 'w') as f:
+    json.dump(dataclasses.asdict(model_config), f, indent=4)
+with open(f'./results/config_eval/{experiment_name}/{experiment_name}_data_config.json', 'w') as f:
+    json.dump(dataclasses.asdict(data_config), f, indent=4)
 
 # Train loss
 avg_train_loss = None

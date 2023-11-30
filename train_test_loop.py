@@ -26,12 +26,30 @@ class EncoderConfig:
 
 
 @dataclass
+class STDPMethodConfig:
+    pass
+
+
+@dataclass
+class STDPClassicConfig(STDPMethodConfig):
+    base_mu: float = 1.
+    base_mu_bias: float = 1.
+
+
+@dataclass
+class STDPAdaptiveConfig(STDPMethodConfig):
+    base_mu: float = 5e-1
+    base_mu_bias: float = 5e-1
+    min_mu: float = 1e-6
+    min_mu_bias: float = 1e-6
+    max_delta: float = 1e0
+
+
+@dataclass
 class STDPConfig:
-    base_mu: float
-    base_mu_bias: float
     c: float
     time_batch_size: int
-    adaptive: bool = False
+    method: STDPMethodConfig = None
 
 
 @dataclass
@@ -125,19 +143,25 @@ def init_model(model_config: ModelConfig) -> Tuple[SpikePopulationGroupBatchToTi
                                                      encoder_config.delay, dt,
                                                      background_oscillation_args=encoder_config.background_oscillation_args)
 
-    if stdp_config.adaptive:
+    method = stdp_config.method
+    if isinstance(method, STDPAdaptiveConfig):
         stdp_module = custom_stdp.BayesianSTDPAdaptive(model_config.input_neuron_count,
                                                        model_config.output_neuron_count,
                                                        time_batch_size=stdp_config.time_batch_size,
-                                                       base_mu=stdp_config.base_mu,
-                                                       base_mu_bias=stdp_config.base_mu_bias,
+                                                       base_mu=method.base_mu,
+                                                       base_mu_bias=method.base_mu_bias,
+                                                       min_mu_weights=method.min_mu,
+                                                       min_mu_bias=method.min_mu_bias,
+                                                       max_delta=method.max_delta,
                                                        c=stdp_config.c, collect_history=True)
-    else:
+    elif isinstance(method, STDPClassicConfig):
         stdp_module = custom_stdp.BayesianSTDPClassic(model_config.output_neuron_count, c=stdp_config.c,
-                                                      base_mu=stdp_config.base_mu,
-                                                      base_mu_bias=stdp_config.base_mu_bias,
+                                                      base_mu=method.base_mu,
+                                                      base_mu_bias=method.base_mu_bias,
                                                       time_batch_size=stdp_config.time_batch_size,
                                                       collect_history=True)
+    else:
+        raise ValueError(f"Unknown STDP method: {method}")
 
     output_cell = EfficientStochasticOutputNeuronCell(inhibition_args=output_cell_config.inhibition_args,
                                                       noise_args=output_cell_config.noise_args,

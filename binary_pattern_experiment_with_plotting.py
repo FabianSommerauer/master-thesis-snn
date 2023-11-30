@@ -2,17 +2,16 @@ import json
 import os
 
 import numpy as np
-import torch
 from matplotlib import pyplot as plt
 from pandas import DataFrame as df
 from torch.utils.data import DataLoader
 
 from binary_pattern_dataset import BinaryPatternDataset
 from my_plot_utils import raster_plot_multi_color
-from my_spike_modules import InhibitionArgs, NoiseArgs, LogFiringRateCalculationMode, BackgroundOscillationArgs
+from my_spike_modules import InhibitionArgs, NoiseArgs, LogFiringRateCalculationMode
 from my_utils import set_seed
 from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellConfig, TrainConfig, train_model, \
-    TestConfig, test_model
+    TestConfig, test_model, STDPAdaptiveConfig
 
 # Experiment name
 experiment_name = "testing"
@@ -64,11 +63,10 @@ model_config = ModelConfig(
         background_oscillation_args=input_osc_args
     ),
     stdp_config=STDPConfig(
-        base_mu=5e-1,  # 5e-1 (classic); 2e-1 (adaptive)  (low values will make bias convergence more visible)
-        base_mu_bias=5e-1,  # 5e-1 (classic); 1e-1 (adaptive)
         c=1.,
         time_batch_size=5,
-        adaptive=True,
+        method=STDPAdaptiveConfig(base_mu=5e-1, base_mu_bias=5e-1)
+        # method=STDPClassicConfig(base_mu=1., base_mu_bias=1.)
     ),
     output_cell_config=OutputCellConfig(
         inhibition_args=inhibition_args,
@@ -87,6 +85,16 @@ os.makedirs(f'./results/single_run/{experiment_name}', exist_ok=True)
 # save base config
 with open(f'./results/single_run/{experiment_name}/{experiment_name}_base_config.txt', 'w') as f:
     f.write(str(model_config))
+
+with open(f'./results/single_run/{experiment_name}/{experiment_name}_data_config.json', 'w') as f:
+    json.dump({
+        'batch_size': batch_size,
+        'num_patterns': num_patterns,
+        'num_repeats_train': num_repeats_train,
+        'num_repeats_test': num_repeats_test,
+        'pattern_length': pattern_length,
+        'pattern_sparsity': pattern_sparsity,
+    }, f, indent=4)
 
 train_config = TrainConfig(
     num_epochs=1,
