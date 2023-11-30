@@ -1,0 +1,8 @@
+{
+    "batch_size": 1,
+    "num_patterns": 5,
+    "num_repeats_train": 100,
+    "num_repeats_test": 10,
+    "pattern_length": 100,
+    "pattern_sparsity": 0.5
+}

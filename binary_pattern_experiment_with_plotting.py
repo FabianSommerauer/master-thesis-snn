@@ -3,19 +3,21 @@ import json
 import os
 
 import numpy as np
+import torch
 from matplotlib import pyplot as plt
 from pandas import DataFrame as df
 from torch.utils.data import DataLoader
 
 from binary_pattern_dataset import BinaryPatternDataset
 from my_plot_utils import raster_plot_multi_color
-from my_spike_modules import InhibitionArgs, NoiseArgs, LogFiringRateCalculationMode
+from my_spike_modules import InhibitionArgs, NoiseArgs, LogFiringRateCalculationMode, OutputBackgroundOscillationArgs, \
+    InputBackgroundOscillationArgs
 from my_utils import set_seed
 from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellConfig, TrainConfig, train_model, \
     TestConfig, test_model, STDPAdaptiveConfig
 
 # Experiment name
-experiment_name = "testing"
+experiment_name = "adaptive_small_100Hz_5Hz"
 
 # Set seed
 seed = 56423
@@ -23,10 +25,10 @@ set_seed(seed)
 
 # Data config
 batch_size = 1
-num_patterns = 10
+num_patterns = 5
 num_repeats_train = 100
-num_repeats_test = 10
-pattern_length = 300
+num_repeats_test = 4
+pattern_length = 100
 pattern_sparsity = 0.5
 
 # Load data
@@ -44,8 +46,8 @@ binary_input_variable_cnt = pat_len
 input_neuron_count = binary_input_variable_cnt * 2
 output_neuron_count = distinct_targets.shape[0]
 
-input_osc_args = None  # InputBackgroundOscillationArgs(0.5, 0.5, 20, -torch.pi / 2)
-output_osc_args = None  # OutputBackgroundOscillationArgs(50, 20, -torch.pi / 2)
+input_osc_args = InputBackgroundOscillationArgs(0.5, 0.5, 20, -torch.pi / 2)
+output_osc_args = OutputBackgroundOscillationArgs(50, 20, -torch.pi / 2)
 
 inhibition_args = InhibitionArgs(2000, 100, 5e-3)  # 1000, 0, 2e-3 (weak); 2000, 100, 5e-3 (strong)
 noise_args = NoiseArgs(0, 5e-3, 50)
@@ -59,7 +61,7 @@ model_config = ModelConfig(
     encoder_config=EncoderConfig(
         presentation_duration=4e-2,
         delay=1e-2,
-        active_rate=30,
+        active_rate=100,
         inactive_rate=5,
         background_oscillation_args=input_osc_args
     ),
@@ -214,7 +216,7 @@ plt.show()
 
 learning_rates_tracker.plot(
     save_path=f'./results/single_run/{experiment_name}/{experiment_name}_{seed}_learning_rates.png',
-    legend=True)
+    legend=False)
 
 # visualize bias convergence
 weight_tracker.plot_bias_convergence(target_biases=[np.log(1. / output_neuron_count)
