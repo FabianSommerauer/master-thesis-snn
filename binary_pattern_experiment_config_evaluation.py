@@ -7,10 +7,11 @@ from dataclasses import dataclass
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import torch
 from torch.utils.data import DataLoader
 
 from binary_pattern_dataset import BinaryPatternDataset
-from my_spike_modules import InhibitionArgs, NoiseArgs, LogFiringRateCalculationMode
+from my_spike_modules import InhibitionArgs, NoiseArgs, LogFiringRateCalculationMode, BackgroundOscillationArgs
 from my_utils import set_seed
 from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellConfig, TrainConfig, TestConfig, \
     evaluate_config, STDPAdaptiveConfig, STDPClassicConfig
@@ -27,7 +28,7 @@ class BinaryPatternDataConfig:
 
 
 # Set seed
-seed = 4341
+seed = 93259
 set_seed(seed)
 
 # Data config
@@ -60,8 +61,8 @@ binary_input_variable_cnt = pattern_length
 input_neuron_count = binary_input_variable_cnt * 2
 output_neuron_count = num_patterns
 
-input_osc_args = None  # BackgroundOscillationArgs(1, 20, -torch.pi / 2)
-output_osc_args = None  # BackgroundOscillationArgs(50, 20, -torch.pi / 2)
+input_osc_args = BackgroundOscillationArgs(1, 20, -torch.pi / 2)
+output_osc_args = BackgroundOscillationArgs(50, 20, -torch.pi / 2)
 
 inhibition_args = InhibitionArgs(2000, 100, 5e-3)  # 1000, 0, 2e-3 (weak); 2000, 100, 5e-3 (strong)
 noise_args = NoiseArgs(0, 5e-3, 50)
@@ -167,17 +168,17 @@ seeds = [random.randint(0, 10000) for _ in range(repeats)]
 # param_values = [0, 25, 50, 75, 100, 125, 150, 175, 200]
 # values_categorical = False
 
-experiment_name = 'adaptive_strong_inhibition'
-param_name = 'adaptive'
-set_param_func = set_adaptive
-param_values = [True, False]
-values_categorical = True
-
-# experiment_name = 'background_oscillation'
-# param_name = 'Oscillation Type'
-# set_param_func = set_background_oscillation
-# param_values = ['None', 'Input Only', 'Output Only', 'Both']
+# experiment_name = 'adaptive_vs_classic'
+# param_name = 'adaptive'
+# set_param_func = set_adaptive
+# param_values = [True, False]
 # values_categorical = True
+
+experiment_name = 'background_oscillation'
+param_name = 'Oscillation Type'
+set_param_func = set_background_oscillation
+param_values = ['None', 'Input Only', 'Output Only', 'Both']
+values_categorical = True
 
 # create folder for experiment
 os.makedirs(f'./results/config_eval/{experiment_name}', exist_ok=True)

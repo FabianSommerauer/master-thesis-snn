@@ -18,7 +18,7 @@ from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellCo
 experiment_name = "testing"
 
 # Set seed
-seed = 7756
+seed = 56423
 set_seed(seed)
 
 # Data config

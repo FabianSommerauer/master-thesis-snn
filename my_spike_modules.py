@@ -105,7 +105,7 @@ class SpikePopulationGroupBatchToTimeEncoder(nn.Module):
                 phase += self.background_oscillation_phase
                 next_start_phase += self.background_oscillation_phase
 
-            rate_modulation = self.background_oscillation_amplitude * (1 + torch.zeros_like(phase))
+            rate_modulation = self.background_oscillation_amplitude * (1 + torch.sin(phase))
         else:
             rate_modulation = None
             next_start_phase = None
