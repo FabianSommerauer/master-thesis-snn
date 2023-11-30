@@ -1,0 +1,6 @@
+{
+    "batch_size": 10,
+    "num_patterns_train": 60000,
+    "num_patterns_test": 10000,
+    "shuffle_train": true
+}

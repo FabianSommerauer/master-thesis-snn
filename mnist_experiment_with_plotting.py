@@ -17,10 +17,10 @@ from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellCo
     TestConfig, test_model, STDPAdaptiveConfig
 
 # Experiment name
-experiment_name = "adaptive_simpler_binary_strong_inhibition"
+experiment_name = "adaptive_non_binarized_100Hz_0Hz_full"
 
 # Set seed
-seed = 9665
+seed = 85453
 set_seed(seed)
 
 # Data config
@@ -34,7 +34,7 @@ transform = transforms.Compose([
     transforms.Grayscale(),
     transforms.ToTensor(),
     transforms.Normalize((0,), (1,)),
-    ToBinaryTransform(0.5),
+    # ToBinaryTransform(0.5),
     FlattenTransform()
 ])
 
@@ -47,11 +47,11 @@ _, width, height = mnist_train.data.shape
 mnist_train.data, mnist_train.targets = reorder_dataset_by_targets(mnist_train.data, mnist_train.targets)
 mnist_test.data, mnist_test.targets = reorder_dataset_by_targets(mnist_test.data, mnist_test.targets)
 
-# Reduce to subset
-mnist_train.data = mnist_train.data[:10000]
-mnist_train.targets = mnist_train.targets[:10000]
-mnist_test.data = mnist_test.data[:100]
-mnist_test.targets = mnist_test.targets[:100]
+# # Reduce to subset
+# mnist_train.data = mnist_train.data[:10000]
+# mnist_train.targets = mnist_train.targets[:10000]
+# mnist_test.data = mnist_test.data[:100]
+# mnist_test.targets = mnist_test.targets[:100]
 
 # Create data loaders
 train_loader = DataLoader(mnist_train, batch_size=batch_size, shuffle=shuffle_train)
