@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import os
 
@@ -83,8 +84,8 @@ model_config = ModelConfig(
 os.makedirs(f'./results/single_run/{experiment_name}', exist_ok=True)
 
 # save base config
-with open(f'./results/single_run/{experiment_name}/{experiment_name}_base_config.txt', 'w') as f:
-    f.write(str(model_config))
+with open(f'./results/single_run/{experiment_name}/{experiment_name}_model_config.json', 'w') as f:
+    json.dump(dataclasses.asdict(model_config), f, indent=4)
 
 with open(f'./results/single_run/{experiment_name}/{experiment_name}_data_config.json', 'w') as f:
     json.dump({

@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import os
 
@@ -87,7 +88,7 @@ model_config = ModelConfig(
     stdp_config=STDPConfig(
         c=1.,
         time_batch_size=10,
-        method=STDPAdaptiveConfig(base_mu=2e-1, base_mu_bias=2e-1)
+        method=STDPAdaptiveConfig(base_mu=5e-1, base_mu_bias=5e-1)
         # method=STDPClassicConfig(base_mu=1., base_mu_bias=1.)
     ),
     output_cell_config=OutputCellConfig(
@@ -105,8 +106,9 @@ model_config = ModelConfig(
 os.makedirs(f'./results/mnist/{experiment_name}', exist_ok=True)
 
 # save base config
-with open(f'./results/mnist/{experiment_name}/{experiment_name}_base_config.txt', 'w') as f:
-    f.write(str(model_config))
+with open(f'./results/mnist/{experiment_name}/{experiment_name}_model_config.json', 'w') as f:
+    json.dump(dataclasses.asdict(model_config), f, indent=4)
+
 with open(f'./results/mnist/{experiment_name}/{experiment_name}_data_config.json', 'w') as f:
     json.dump({
         'batch_size': batch_size,

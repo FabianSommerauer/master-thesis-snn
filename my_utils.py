@@ -2,10 +2,9 @@ import random
 
 import numpy as np
 import torch
-from deprecation import deprecated
 from einops import rearrange
-from torch import Tensor
 from scipy.special import logsumexp
+from torch import Tensor
 
 
 def spike_in_range(spike_times, time_ranges):
@@ -210,8 +209,6 @@ def normalized_conditional_cross_entropy_paper(joint_probabilities):
         normalized_cond_cross_entropy: normalized conditional cross entropy [shape (time,)]
     """
 
-    # todo: deal with zeros
-
     # compute conditional probabilities
     conditional_probabilities = joint_probabilities / np.sum(joint_probabilities, axis=-2, keepdims=True)
 
@@ -236,8 +233,6 @@ def normalized_conditional_cross_entropy(joint_probabilities):
     Output:
         normalized_cond_cross_entropy: normalized conditional cross entropy [shape (time,)]
     """
-
-    # todo: deal with zeros
 
     # compute conditional probabilities
     conditional_probabilities = joint_probabilities / np.sum(joint_probabilities, axis=-2, keepdims=True)
@@ -308,7 +303,8 @@ def get_input_log_likelihood(weights, biases, inputs, c=1.):
 
     with np.errstate(divide='ignore'):
         group_normalized_single_input_log_likelihoods = np.log(single_input_likelihoods
-                                                               / (np.sum(single_input_likelihoods, axis=-1, keepdims=True)
+                                                               / (np.sum(single_input_likelihoods, axis=-1,
+                                                                         keepdims=True)
                                                                   + 1e-10))
 
     # # more readable but susceptible to numerical errors (0 * -inf = nan)
@@ -324,14 +320,6 @@ def get_input_log_likelihood(weights, biases, inputs, c=1.):
     input_log_likelihood = logsumexp(input_log_likelihood_per_output_neuron + normalized_log_priors, axis=-1)
 
     return input_log_likelihood
-
-
-# todo
-# joint = get_joint_probabilities_over_time_for_rates(probs, train_time_ranges)
-# plt.plot(normalized_conditional_cross_entropy(moving_avg(joint, 500, 0)))
-def moving_avg(arr, len, axis):
-    filt = np.ones(len) / len
-    return np.apply_along_axis(lambda m: np.convolve(m, filt, mode='valid'), axis=axis, arr=arr)
 
 
 def reorder_dataset_by_targets(data, targets):

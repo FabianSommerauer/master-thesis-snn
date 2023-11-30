@@ -52,8 +52,6 @@ def init_binary_pattern_dataset(seed=None):
     train_loader = DataLoader(binary_train, batch_size=data_config.batch_size, shuffle=False)
     test_loader = DataLoader(binary_test, batch_size=data_config.batch_size, shuffle=False)
 
-    # distinct_targets = binary_train.pattern_ids.unique().cpu().numpy()
-
     return train_loader, test_loader
 
 

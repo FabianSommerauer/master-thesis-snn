@@ -32,12 +32,14 @@ class STDPMethodConfig:
 
 @dataclass
 class STDPClassicConfig(STDPMethodConfig):
+    type: str = 'classic'
     base_mu: float = 1.
     base_mu_bias: float = 1.
 
 
 @dataclass
 class STDPAdaptiveConfig(STDPMethodConfig):
+    type: str = 'adaptive'
     base_mu: float = 5e-1
     base_mu_bias: float = 5e-1
     min_mu: float = 1e-6
