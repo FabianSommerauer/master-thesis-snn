@@ -7,7 +7,7 @@ import torch
 import custom_stdp
 from my_spike_modules import BinaryTimedPSP, EfficientBayesianSTDPModel, LogFiringRateCalculationMode, NoiseArgs, \
     InhibitionArgs, EfficientStochasticOutputNeuronCell, SpikePopulationGroupBatchToTimeEncoder, \
-    BackgroundOscillationArgs
+    OutputBackgroundOscillationArgs, InputBackgroundOscillationArgs
 from my_timing_utils import Timer
 from my_trackers import SpikeRateTracker, InhibitionStateTracker, LearningRatesTracker, WeightsTracker
 from my_utils import normalized_conditional_cross_entropy_paper, normalized_conditional_cross_entropy, \
@@ -22,7 +22,7 @@ class EncoderConfig:
     delay: float
     active_rate: float
     inactive_rate: float
-    background_oscillation_args: BackgroundOscillationArgs | None = None
+    background_oscillation_args: InputBackgroundOscillationArgs | None = None
 
 
 @dataclass
@@ -59,7 +59,7 @@ class OutputCellConfig:
     inhibition_args: InhibitionArgs
     noise_args: NoiseArgs
     log_firing_rate_calc_mode: LogFiringRateCalculationMode
-    background_oscillation_args: BackgroundOscillationArgs | None = None
+    background_oscillation_args: OutputBackgroundOscillationArgs | None = None
 
 
 @dataclass

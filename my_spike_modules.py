@@ -28,7 +28,15 @@ class NoiseArgs:
 
 
 @dataclass
-class BackgroundOscillationArgs:
+class OutputBackgroundOscillationArgs:
+    osc_amplitude: float
+    osc_freq: float
+    osc_phase: float
+
+
+@dataclass
+class InputBackgroundOscillationArgs:
+    osc_offset: float
     osc_amplitude: float
     osc_freq: float
     osc_phase: float
@@ -68,7 +76,7 @@ class SpikePopulationGroupEncoder(nn.Module):
 
 class SpikePopulationGroupBatchToTimeEncoder(nn.Module):
     def __init__(self, presentation_duration=0.1, active_rate=100, inactive_rate=0.0, delay=0.01, dt=0.001,
-                 background_oscillation_args: BackgroundOscillationArgs = None):
+                 background_oscillation_args: InputBackgroundOscillationArgs = None):
         super().__init__()
         self.dt = dt
         self.seq_length = int(presentation_duration / dt)
@@ -77,6 +85,7 @@ class SpikePopulationGroupBatchToTimeEncoder(nn.Module):
 
         self.background_oscillation_active = background_oscillation_args is not None
         if self.background_oscillation_active:
+            self.background_oscillation_offset = background_oscillation_args.osc_offset
             self.background_oscillation_amplitude = background_oscillation_args.osc_amplitude
             self.background_oscillation_freq = background_oscillation_args.osc_freq
             self.background_oscillation_phase = background_oscillation_args.osc_phase
@@ -105,7 +114,8 @@ class SpikePopulationGroupBatchToTimeEncoder(nn.Module):
                 phase += self.background_oscillation_phase
                 next_start_phase += self.background_oscillation_phase
 
-            rate_modulation = self.background_oscillation_amplitude * (1 + torch.sin(phase))
+            rate_modulation = (self.background_oscillation_amplitude * (1 + torch.sin(phase))
+                               + self.background_oscillation_offset)
         else:
             rate_modulation = None
             next_start_phase = None
@@ -360,7 +370,7 @@ class BayesianSTDPModel(nn.Module):
 
 class EfficientStochasticOutputNeuronCell(nn.Module):
     def __init__(self, inhibition_args: InhibitionArgs, noise_args: NoiseArgs,
-                 background_oscillation_args: BackgroundOscillationArgs = None,
+                 background_oscillation_args: InputBackgroundOscillationArgs = None,
                  dt=0.001, log_firing_rate_calc_mode=LogFiringRateCalculationMode.Default,
                  collect_rates=False):
         super(EfficientStochasticOutputNeuronCell, self).__init__()

@@ -10,7 +10,8 @@ from torch.utils.data import DataLoader
 from torchvision import transforms, datasets
 
 from my_plot_utils import raster_plot_multi_color
-from my_spike_modules import BackgroundOscillationArgs, InhibitionArgs, NoiseArgs, LogFiringRateCalculationMode
+from my_spike_modules import InhibitionArgs, NoiseArgs, LogFiringRateCalculationMode, \
+    OutputBackgroundOscillationArgs, InputBackgroundOscillationArgs
 from my_utils import set_seed, reorder_dataset_by_targets, FlattenTransform, ToBinaryTransform
 from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellConfig, TrainConfig, train_model, \
     TestConfig, test_model, STDPAdaptiveConfig
@@ -66,8 +67,8 @@ input_neuron_count = binary_input_variable_cnt * 2
 output_neuron_count = 100
 data_count = mnist_train.data.shape[0]
 
-input_osc_args = BackgroundOscillationArgs(1, 20, -torch.pi / 2)
-output_osc_args = BackgroundOscillationArgs(50, 20, -torch.pi / 2)
+input_osc_args = InputBackgroundOscillationArgs(0.5, 0.5, 20, -torch.pi / 2)
+output_osc_args = OutputBackgroundOscillationArgs(50, 20, -torch.pi / 2)
 
 inhibition_args = InhibitionArgs(2000, 50, 2e-3)
 noise_args = NoiseArgs(0, 5e-3, 50)

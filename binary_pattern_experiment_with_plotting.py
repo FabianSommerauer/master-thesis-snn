@@ -44,8 +44,8 @@ binary_input_variable_cnt = pat_len
 input_neuron_count = binary_input_variable_cnt * 2
 output_neuron_count = distinct_targets.shape[0]
 
-input_osc_args = None  # BackgroundOscillationArgs(1, 20, -torch.pi / 2)
-output_osc_args = None  # BackgroundOscillationArgs(50, 20, -torch.pi / 2)
+input_osc_args = None  # InputBackgroundOscillationArgs(0.5, 0.5, 20, -torch.pi / 2)
+output_osc_args = None  # OutputBackgroundOscillationArgs(50, 20, -torch.pi / 2)
 
 inhibition_args = InhibitionArgs(2000, 100, 5e-3)  # 1000, 0, 2e-3 (weak); 2000, 100, 5e-3 (strong)
 noise_args = NoiseArgs(0, 5e-3, 50)
