@@ -28,18 +28,15 @@ class NoiseArgs:
 
 
 @dataclass
-class OutputBackgroundOscillationArgs:
+class BackgroundOscillationArgs:
     osc_amplitude: float
     osc_freq: float
     osc_phase: float
 
 
 @dataclass
-class InputBackgroundOscillationArgs:
+class InputBackgroundOscillationArgs(BackgroundOscillationArgs):
     osc_offset: float
-    osc_amplitude: float
-    osc_freq: float
-    osc_phase: float
 
 
 class LogFiringRateCalculationMode(str, Enum):
@@ -91,7 +88,7 @@ class SpikePopulationGroupBatchToTimeEncoder(nn.Module):
             self.background_oscillation_phase = background_oscillation_args.osc_phase
 
     @measure_time
-    def forward(self, input_values: Tensor, start_phase: Tensor = None) -> tuple[Tensor, Tensor] | Tensor:
+    def forward(self, input_values: Tensor, start_phase: Tensor = None) -> tuple[Tensor, Tensor | None]:
         if self.background_oscillation_active:
             phase = self.background_oscillation_freq * torch.arange(self.seq_length) * self.dt
 
@@ -370,7 +367,7 @@ class BayesianSTDPModel(nn.Module):
 
 class EfficientStochasticOutputNeuronCell(nn.Module):
     def __init__(self, inhibition_args: InhibitionArgs, noise_args: NoiseArgs,
-                 background_oscillation_args: InputBackgroundOscillationArgs = None,
+                 background_oscillation_args: BackgroundOscillationArgs = None,
                  dt=0.001, log_firing_rate_calc_mode=LogFiringRateCalculationMode.Default,
                  collect_rates=False):
         super(EfficientStochasticOutputNeuronCell, self).__init__()

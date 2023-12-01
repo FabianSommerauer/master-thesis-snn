@@ -11,13 +11,13 @@ from torchvision import transforms, datasets
 
 from my_plot_utils import raster_plot_multi_color
 from my_spike_modules import InhibitionArgs, NoiseArgs, LogFiringRateCalculationMode, \
-    OutputBackgroundOscillationArgs, InputBackgroundOscillationArgs
+    BackgroundOscillationArgs, InputBackgroundOscillationArgs
 from my_utils import set_seed, reorder_dataset_by_targets, FlattenTransform, ToBinaryTransform
 from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellConfig, TrainConfig, train_model, \
     TestConfig, test_model, STDPAdaptiveConfig, STDPClassicConfig
 
 # Experiment name
-experiment_name = "classic_non_binarized_100Hz_0Hz_full"
+experiment_name = "adaptive_non_binarized_100Hz_10Hz_full_easier_test"
 
 # Set seed
 seed = 85453
@@ -67,8 +67,8 @@ input_neuron_count = binary_input_variable_cnt * 2
 output_neuron_count = 100
 data_count = mnist_train.data.shape[0]
 
-input_osc_args = InputBackgroundOscillationArgs(0.5, 0.5, 20, -torch.pi / 2)
-output_osc_args = OutputBackgroundOscillationArgs(50, 20, -torch.pi / 2)
+input_osc_args = InputBackgroundOscillationArgs(0.5, 20, -torch.pi / 2, 0.5)
+output_osc_args = BackgroundOscillationArgs(50, 20, -torch.pi / 2)
 
 inhibition_args = InhibitionArgs(2000, 50, 5e-3)
 noise_args = NoiseArgs(0, 5e-3, 50)
@@ -89,8 +89,8 @@ model_config = ModelConfig(
     stdp_config=STDPConfig(
         c=1.,
         time_batch_size=10,
-        # method=STDPAdaptiveConfig(base_mu=5e-1, base_mu_bias=5e-1)
-        method=STDPClassicConfig(base_mu=1., base_mu_bias=1.)
+        method=STDPAdaptiveConfig(base_mu=5e-1, base_mu_bias=5e-1)
+        # method=STDPClassicConfig(base_mu=1., base_mu_bias=1.)
     ),
     output_cell_config=OutputCellConfig(
         inhibition_args=inhibition_args,
@@ -142,6 +142,8 @@ neuron_pattern_mapping = train_results.neuron_pattern_mapping
 
 test_config.trained_params = trained_params
 test_config.neuron_pattern_mapping = neuron_pattern_mapping
+
+test_config.model_config.encoder_config.inactive_rate = 0
 
 test_results = test_model(test_config, test_loader)
 

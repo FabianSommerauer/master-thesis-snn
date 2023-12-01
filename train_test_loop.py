@@ -7,7 +7,7 @@ import torch
 import custom_stdp
 from my_spike_modules import BinaryTimedPSP, EfficientBayesianSTDPModel, LogFiringRateCalculationMode, NoiseArgs, \
     InhibitionArgs, EfficientStochasticOutputNeuronCell, SpikePopulationGroupBatchToTimeEncoder, \
-    OutputBackgroundOscillationArgs, InputBackgroundOscillationArgs
+    BackgroundOscillationArgs, InputBackgroundOscillationArgs
 from my_timing_utils import Timer
 from my_trackers import SpikeRateTracker, InhibitionStateTracker, LearningRatesTracker, WeightsTracker
 from my_utils import normalized_conditional_cross_entropy_paper, normalized_conditional_cross_entropy, \
@@ -59,7 +59,7 @@ class OutputCellConfig:
     inhibition_args: InhibitionArgs
     noise_args: NoiseArgs
     log_firing_rate_calc_mode: LogFiringRateCalculationMode
-    background_oscillation_args: OutputBackgroundOscillationArgs | None = None
+    background_oscillation_args: BackgroundOscillationArgs | None = None
 
 
 @dataclass
@@ -402,7 +402,8 @@ def test_model(config: TestConfig, data_loader):
                        timing_info=timing_info)
 
 
-def evaluate_config(train_config, test_config, init_dataset_func, seeds):
+def evaluate_config(train_config: TrainConfig, test_config: TestConfig,
+                    init_dataset_func, seeds):
     repeats = len(seeds)
 
     metrics = {

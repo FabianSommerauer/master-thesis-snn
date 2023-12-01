@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 
 from binary_pattern_dataset import BinaryPatternDataset
 from my_spike_modules import InhibitionArgs, NoiseArgs, LogFiringRateCalculationMode, InputBackgroundOscillationArgs, \
-    OutputBackgroundOscillationArgs
+    BackgroundOscillationArgs
 from my_utils import set_seed
 from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellConfig, TrainConfig, TestConfig, \
     evaluate_config, STDPAdaptiveConfig, STDPClassicConfig
@@ -62,8 +62,8 @@ binary_input_variable_cnt = pattern_length
 input_neuron_count = binary_input_variable_cnt * 2
 output_neuron_count = num_patterns
 
-input_osc_args = InputBackgroundOscillationArgs(0.5, 0.5, 20, -torch.pi / 2)
-output_osc_args = OutputBackgroundOscillationArgs(50, 20, -torch.pi / 2)
+input_osc_args = InputBackgroundOscillationArgs(0.5, 20, -torch.pi / 2, 0.5)
+output_osc_args = BackgroundOscillationArgs(50, 20, -torch.pi / 2)
 
 inhibition_args = InhibitionArgs(2000, 100, 5e-3)  # 1000, 0, 2e-3 (weak); 2000, 100, 5e-3 (strong)
 noise_args = NoiseArgs(0, 5e-3, 50)
