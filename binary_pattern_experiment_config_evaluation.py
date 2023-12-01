@@ -3,6 +3,7 @@ import json
 import os
 import random
 from dataclasses import dataclass
+from typing import Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -37,7 +38,7 @@ batch_size = 1
 num_patterns = 10
 num_repeats_train = 100
 num_repeats_test = 10
-pattern_length = 300
+pattern_length = 100
 pattern_sparsity = 0.5
 
 data_config = BinaryPatternDataConfig(batch_size, num_patterns, num_repeats_train,
@@ -160,7 +161,23 @@ def set_background_oscillation(model_config: ModelConfig, data_config: BinaryPat
         raise ValueError(f'Unknown value: {value}')
 
 
-repeats = 5
+def set_firing_rates(model_config: ModelConfig, data_config: BinaryPatternDataConfig,
+                     value: Tuple[float, float]):
+    model_config.encoder_config.active_rate = value[0]
+    model_config.encoder_config.inactive_rate = value[1]
+
+
+def set_num_patterns(model_config: ModelConfig, data_config: BinaryPatternDataConfig,
+                     value: int):
+    data_config.num_patterns = value
+
+
+def set_pattern_length(model_config: ModelConfig, data_config: BinaryPatternDataConfig,
+                       value: int):
+    data_config.pattern_length = value
+
+
+repeats = 1
 seeds = [random.randint(0, 10000) for _ in range(repeats)]
 
 # experiment_name = 'inhibition_rest'
@@ -175,10 +192,17 @@ seeds = [random.randint(0, 10000) for _ in range(repeats)]
 # param_values = [True, False]
 # values_categorical = True
 
-experiment_name = 'background_oscillation'
-param_name = 'Oscillation Type'
-set_param_func = set_background_oscillation
-param_values = ['None', 'Input Only', 'Output Only', 'Both']
+# experiment_name = 'background_oscillation'
+# param_name = 'Oscillation Type'
+# set_param_func = set_background_oscillation
+# param_values = ['None', 'Input Only', 'Output Only', 'Both']
+# values_categorical = True
+
+experiment_name = 'active_firing_rate_low_repeats'
+param_name = 'Active Firing rate'
+set_param_func = set_firing_rates
+param_values = [[20, 5], [40, 5], [60, 5], [80, 5], [100, 5], [120, 5], [140, 5], [160, 5], [180, 5], [200, 5]]
+# param_values = [[10, 0], [20, 0], [20, 10], [30, 0], [30, 10], [30, 20], [40, 0], [40, 10], [40, 20], [40, 30]]
 values_categorical = True
 
 # create folder for experiment
@@ -253,7 +277,11 @@ with open(f'./results/config_eval/{experiment_name}/{experiment_name}_{seed}_avg
 
 df = pd.concat(dfs)
 if values_categorical:
-    df['value'] = pd.Categorical(df['value'], categories=param_values, ordered=True)
+    p_values = param_values
+    if p_values[0] is list:
+        p_values = [str(v) for v in p_values]
+        df['value'] = [str(v) for v in df['value']]
+    df['value'] = pd.Categorical(df['value'], categories=p_values, ordered=True)
 
 # Save dataframe
 df.to_csv(f'./results/config_eval/{experiment_name}/{experiment_name}_{seed}.csv', index=False)
