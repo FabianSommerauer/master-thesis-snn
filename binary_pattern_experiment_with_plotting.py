@@ -154,7 +154,7 @@ plt.plot(train_time_steps, train_results.cond_entropy_hist, label='Conditional E
 plt.plot(train_time_steps, train_results.cond_entropy_paper_hist, label='Paper Conditional Entropy')
 plt.title('Training')
 plt.xlabel('Time [s]')
-plt.ylabel('Normalized Conditional Entropy')
+plt.ylabel('Normalized conditional entropy')
 plt.ylim([0, 1])
 plt.legend()
 plt.savefig(f'./results/single_run/{experiment_name}/{experiment_name}_{seed}_cond_entropy.png')

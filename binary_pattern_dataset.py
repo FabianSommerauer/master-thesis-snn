@@ -1,5 +1,17 @@
+from dataclasses import dataclass
+
 import torch
 from torch.utils.data import Dataset
+
+
+@dataclass
+class BinaryPatternDataConfig:
+    batch_size: int
+    num_patterns: int
+    num_repeats_train: int
+    num_repeats_test: int
+    pattern_length: int
+    pattern_sparsity: float
 
 
 class BinaryPatternDataset(Dataset):

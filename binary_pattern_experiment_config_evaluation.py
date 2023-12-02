@@ -11,22 +11,12 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 
-from binary_pattern_dataset import BinaryPatternDataset
+from binary_pattern_dataset import BinaryPatternDataset, BinaryPatternDataConfig
 from my_spike_modules import InhibitionArgs, NoiseArgs, LogFiringRateCalculationMode, InputBackgroundOscillationArgs, \
     BackgroundOscillationArgs
 from my_utils import set_seed
 from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellConfig, TrainConfig, TestConfig, \
     evaluate_config, STDPAdaptiveConfig, STDPClassicConfig
-
-
-@dataclass
-class BinaryPatternDataConfig:
-    batch_size: int
-    num_patterns: int
-    num_repeats_train: int
-    num_repeats_test: int
-    pattern_length: int
-    pattern_sparsity: float
 
 
 # Set seed

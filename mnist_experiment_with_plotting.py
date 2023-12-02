@@ -17,7 +17,7 @@ from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellCo
     TestConfig, test_model, STDPAdaptiveConfig, STDPClassicConfig
 
 # Experiment name
-experiment_name = "adaptive_non_binarized_100Hz_10Hz_full_easier_test"
+experiment_name = "testing"
 
 # Set seed
 seed = 85453
@@ -143,7 +143,7 @@ neuron_pattern_mapping = train_results.neuron_pattern_mapping
 test_config.trained_params = trained_params
 test_config.neuron_pattern_mapping = neuron_pattern_mapping
 
-test_config.model_config.encoder_config.inactive_rate = 0
+# test_config.model_config.encoder_config.inactive_rate = 0
 
 test_results = test_model(test_config, test_loader)
 
@@ -188,7 +188,7 @@ plt.plot(train_time_steps, train_results.cond_entropy_hist, label='Conditional E
 plt.plot(train_time_steps, train_results.cond_entropy_paper_hist, label='Paper Conditional Entropy')
 plt.title('Training')
 plt.xlabel('Time [s]')
-plt.ylabel('Normalized Conditional Entropy')
+plt.ylabel('Normalized conditional entropy')
 plt.ylim([0, 1])
 plt.legend()
 plt.savefig(f'./results/mnist/{experiment_name}/{experiment_name}_{seed}_cond_entropy.png')
