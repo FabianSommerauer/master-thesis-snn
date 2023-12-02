@@ -10,7 +10,7 @@ from my_spike_modules import BinaryTimedPSP, EfficientBayesianSTDPModel, LogFiri
     BackgroundOscillationArgs, InputBackgroundOscillationArgs
 from my_timing_utils import Timer
 from my_trackers import SpikeRateTracker, InhibitionStateTracker, LearningRatesTracker, WeightsTracker
-from my_utils import normalized_conditional_cross_entropy_paper, normalized_conditional_cross_entropy, \
+from my_utils import normalized_conditional_entropy_paper, normalized_conditional_entropy, \
     get_joint_probabilities_from_counts, get_cumulative_counts_over_time, get_predictions, \
     get_predictions_from_rates, get_input_log_likelihood, \
     get_neuron_pattern_mapping_from_cumulative_counts, set_seed
@@ -97,8 +97,8 @@ class TestConfig:
 
 @dataclass
 class TrainResults:
-    cross_entropy_hist: np.array
-    cross_entropy_paper_hist: np.array
+    cond_entropy_hist: np.array
+    cond_entropy_paper_hist: np.array
     input_log_likelihood_hist: np.array
 
     rate_tracker: SpikeRateTracker
@@ -119,8 +119,8 @@ class TestResults:
     miss_rate: float
     confusion_matrix: np.array
 
-    cross_entropy: float
-    cross_entropy_paper: float
+    cond_entropy: float
+    cond_entropy_paper: float
     average_input_log_likelihood: float
 
     rate_tracker: SpikeRateTracker
@@ -238,21 +238,21 @@ def train_model(config: TrainConfig, data_loader):
                     if config.print_interval is not None:
                         with Timer('metric_printing'):
                             if i % config.print_interval == 0 or i == len(data_loader) - 1:
-                                with Timer('cross_entropy'):
+                                with Timer('cond_entropy'):
                                     joint_probs = get_joint_probabilities_from_counts(cumulative_counts[-1])
 
-                                    cond_cross_entropy = normalized_conditional_cross_entropy(joint_probs)
+                                    cond_entropy = normalized_conditional_entropy(joint_probs)
 
-                                    cond_cross_entropy_paper = normalized_conditional_cross_entropy_paper(joint_probs)
+                                    cond_entropy_paper = normalized_conditional_entropy_paper(joint_probs)
 
                                 print(f"Epoch {epoch}, Iteration {i} \n"
-                                      f"Train Loss: {cond_cross_entropy:.4f}; Paper Loss: {cond_cross_entropy_paper:.4f}")
+                                      f"Train Loss: {cond_entropy:.4f}; Paper Loss: {cond_entropy_paper:.4f}")
 
-    with Timer('cross_entropy'):
+    with Timer('cond_entropy'):
         cumulative_counts_concat = np.concatenate(cumulative_counts_hist, axis=0)
         joint_probs = get_joint_probabilities_from_counts(cumulative_counts_concat)
-        cond_cross_entropy = normalized_conditional_cross_entropy(joint_probs)
-        cond_cross_entropy_paper = normalized_conditional_cross_entropy_paper(joint_probs)
+        cond_entropy = normalized_conditional_entropy(joint_probs)
+        cond_entropy_paper = normalized_conditional_entropy_paper(joint_probs)
 
     with Timer('neuron_pattern_mapping'):
         neuron_pattern_mapping = get_neuron_pattern_mapping_from_cumulative_counts(cumulative_counts_concat[-1])
@@ -271,7 +271,7 @@ def train_model(config: TrainConfig, data_loader):
     timing_info = Timer.str()
     Timer.reset()
 
-    return TrainResults(cond_cross_entropy, cond_cross_entropy_paper,
+    return TrainResults(cond_entropy, cond_entropy_paper,
                         input_log_likelihood_hist=np.concatenate(total_input_log_likelihood, axis=0),
                         rate_tracker=model.output_neuron_cell.rate_tracker,
                         inhibition_tracker=model.inhibition_tracker,
@@ -369,8 +369,8 @@ def test_model(config: TestConfig, data_loader):
     total_acc_rate = np.mean(pred_rates == targets_concat)
 
     joint_probs = get_joint_probabilities_from_counts(cumulative_counts[-1], epsilon=1e-1)
-    cond_cross_entropy = normalized_conditional_cross_entropy(joint_probs)
-    cond_cross_entropy_paper = normalized_conditional_cross_entropy_paper(joint_probs)
+    cond_entropy = normalized_conditional_entropy(joint_probs)
+    cond_entropy_paper = normalized_conditional_entropy_paper(joint_probs)
 
     input_concat = np.concatenate(total_input_values, axis=0)
     weights_np = model.linear.weight.data.cpu().numpy()
@@ -386,13 +386,13 @@ def test_model(config: TestConfig, data_loader):
         print(f"Test Accuracy: {total_acc * 100:.4f}%")
         print(f"Test Rate Accuracy: {total_acc_rate * 100:.4f}%")
         print(f"Test Miss Rate: {total_miss * 100:.4f}%")
-        print(f"Test Cross Entropy: {cond_cross_entropy:.4f}")
-        print(f"Test Paper Cross Entropy: {cond_cross_entropy_paper:.4f}")
+        print(f"Test Conditional Entropy: {cond_entropy:.4f}")
+        print(f"Test Paper Conditional Entropy: {cond_entropy_paper:.4f}")
         print(f"Test Average Input Log Likelihood: {average_input_log_likelihood:.4f}")
 
     return TestResults(total_acc, total_acc_rate, total_miss, confusion_matrix,
-                       cond_cross_entropy,
-                       cond_cross_entropy_paper,
+                       cond_entropy,
+                       cond_entropy_paper,
                        rate_tracker=model.output_neuron_cell.rate_tracker,
                        inhibition_tracker=model.inhibition_tracker,
                        average_input_log_likelihood=average_input_log_likelihood,
@@ -439,20 +439,20 @@ def evaluate_config(train_config: TrainConfig, test_config: TestConfig,
         metrics['accuracy'].append(test_results.accuracy)
         metrics['rate_accuracy'].append(test_results.rate_accuracy)
         metrics['miss_rate'].append(test_results.miss_rate)
-        metrics['loss'].append(test_results.cross_entropy)
-        metrics['loss_paper'].append(test_results.cross_entropy_paper)
+        metrics['loss'].append(test_results.cond_entropy)
+        metrics['loss_paper'].append(test_results.cond_entropy_paper)
         metrics['input_log_likelihood'].append(test_results.average_input_log_likelihood)
         metrics['confusion_matrix'].append(test_results.confusion_matrix)
 
         if metrics['avg_train_loss'] is None:
-            metrics['avg_train_loss'] = train_results.cross_entropy_hist
+            metrics['avg_train_loss'] = train_results.cond_entropy_hist
         else:
-            metrics['avg_train_loss'] += train_results.cross_entropy_hist
+            metrics['avg_train_loss'] += train_results.cond_entropy_hist
 
         if metrics['avg_train_loss_paper'] is None:
-            metrics['avg_train_loss_paper'] = train_results.cross_entropy_paper_hist
+            metrics['avg_train_loss_paper'] = train_results.cond_entropy_paper_hist
         else:
-            metrics['avg_train_loss_paper'] += train_results.cross_entropy_paper_hist
+            metrics['avg_train_loss_paper'] += train_results.cond_entropy_paper_hist
 
     metrics['avg_train_loss'] /= repeats
     metrics['avg_train_loss_paper'] /= repeats

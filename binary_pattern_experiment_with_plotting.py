@@ -139,7 +139,7 @@ inhibition_tracker = test_results.inhibition_tracker
 # Plot
 print("Plotting results...")
 
-train_time_steps = np.arange(1, train_results.cross_entropy_hist.shape[0] + 1)
+train_time_steps = np.arange(1, train_results.cond_entropy_hist.shape[0] + 1)
 train_time_steps = train_time_steps * model_config.dt  # convert to seconds
 if train_config.single_metric_per_batch:
     train_time_steps *= 50  # ms per data point
@@ -150,14 +150,14 @@ else:
 
 inhibition_tracker.plot(save_path=f'./results/single_run/{experiment_name}/{experiment_name}_{seed}_inhibition.png')
 
-plt.plot(train_time_steps, train_results.cross_entropy_hist, label='Crossentropy')
-plt.plot(train_time_steps, train_results.cross_entropy_paper_hist, label='Paper Crossentropy')
+plt.plot(train_time_steps, train_results.cond_entropy_hist, label='Conditional Entropy')
+plt.plot(train_time_steps, train_results.cond_entropy_paper_hist, label='Paper Conditional Entropy')
 plt.title('Training')
 plt.xlabel('Time [s]')
-plt.ylabel('Normalized Conditional Crossentropy')
+plt.ylabel('Normalized Conditional Entropy')
 plt.ylim([0, 1])
 plt.legend()
-plt.savefig(f'./results/single_run/{experiment_name}/{experiment_name}_{seed}_cross_entropy.png')
+plt.savefig(f'./results/single_run/{experiment_name}/{experiment_name}_{seed}_cond_entropy.png')
 plt.show()
 
 input_log_likelihood_df = df.from_dict({
@@ -237,8 +237,8 @@ test_metrics = {
     'accuracy': test_results.accuracy,
     'rate_accuracy': test_results.rate_accuracy,
     'miss_rate': test_results.miss_rate,
-    'cross_entropy': test_results.cross_entropy,
-    'cross_entropy_paper': test_results.cross_entropy_paper,
+    'cond_entropy': test_results.cond_entropy,
+    'cond_entropy_paper': test_results.cond_entropy_paper,
     'avg_log_likelihood': test_results.average_input_log_likelihood
 }
 

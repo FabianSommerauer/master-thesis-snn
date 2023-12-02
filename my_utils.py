@@ -198,40 +198,40 @@ def get_joint_probabilities_over_time_for_rates(relative_firing_rates, time_rang
     return joint_probabilities_over_time
 
 
-def normalized_conditional_cross_entropy_paper(joint_probabilities):
-    """Compute normalized conditional cross entropy H(k|Z) / H(k,Z) based on joint probabilities
+def normalized_conditional_entropy_paper(joint_probabilities):
+    """Compute normalized conditional entropy H(k|Z) / H(k,Z) based on joint probabilities
     This is the normalization scheme described in the paper (https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1003037).
     However, this metric is more difficult to interpret as the maximum value is not 1.0.
 
     Args:
         joint_probabilities: joint probabilities of pattern presentation and output neuron firing [shape (time, pattern, neuron) or (pattern, neuron)]
     Output:
-        normalized_cond_cross_entropy: normalized conditional cross entropy [shape (time,)]
+        normalized_cond_entropy: normalized conditional entropy [shape (time,)]
     """
 
     # compute conditional probabilities
     conditional_probabilities = joint_probabilities / np.sum(joint_probabilities, axis=-2, keepdims=True)
 
-    # compute cross entropy
-    cross_entropy = -np.sum(np.sum(joint_probabilities * np.log(joint_probabilities), axis=-1), axis=-1)
-    conditional_cross_entropy = -np.sum(np.sum(joint_probabilities * np.log(conditional_probabilities), axis=-1),
+    # compute conditional entropy
+    joint_entropy = -np.sum(np.sum(joint_probabilities * np.log(joint_probabilities), axis=-1), axis=-1)
+    conditional_entropy = -np.sum(np.sum(joint_probabilities * np.log(conditional_probabilities), axis=-1),
                                         axis=-1)
 
     # normalize
-    normalized_cond_cross_entropy = conditional_cross_entropy / cross_entropy
+    normalized_cond_entropy = conditional_entropy / joint_entropy
 
-    return normalized_cond_cross_entropy
+    return normalized_cond_entropy
 
 
-def normalized_conditional_cross_entropy(joint_probabilities):
-    """Compute normalized conditional cross entropy H(k|Z) / H(k) based on joint probabilities
+def normalized_conditional_entropy(joint_probabilities):
+    """Compute normalized conditional entropy H(k|Z) / H(k) based on joint probabilities
     We use a different normalization scheme than described in the paper (https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1003037).
     In our case the normalized value is always within [0,1]. 1 if k and Z are independent, 0 if Z perfectly predicts k.
 
     Args:
         joint_probabilities: joint probabilities of pattern presentation and output neuron firing [shape (time, pattern, neuron) or (pattern, neuron)]
     Output:
-        normalized_cond_cross_entropy: normalized conditional cross entropy [shape (time,)]
+        normalized_cond_entropy: normalized conditional entropy [shape (time,)]
     """
 
     # compute conditional probabilities
@@ -239,15 +239,15 @@ def normalized_conditional_cross_entropy(joint_probabilities):
 
     pattern_probabilities = np.sum(joint_probabilities, axis=-1)
 
-    # compute cross entropy
-    conditional_cross_entropy = -np.sum(np.sum(joint_probabilities * np.log(conditional_probabilities), axis=-1),
-                                        axis=-1)
-    pattern_cross_entropy = -np.sum(pattern_probabilities * np.log(pattern_probabilities), axis=-1)
+    # compute conditional entropy
+    conditional_entropy = -np.sum(np.sum(joint_probabilities * np.log(conditional_probabilities), axis=-1),
+                                  axis=-1)
+    pattern_entropy = -np.sum(pattern_probabilities * np.log(pattern_probabilities), axis=-1)
 
     # normalize
-    normalized_cond_cross_entropy = conditional_cross_entropy / pattern_cross_entropy
+    normalized_cond_entropy = conditional_entropy / pattern_entropy
 
-    return normalized_cond_cross_entropy
+    return normalized_cond_entropy
 
 
 def grouped_sum(array, groups):
