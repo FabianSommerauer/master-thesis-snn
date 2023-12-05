@@ -70,7 +70,7 @@ data_count = mnist_train.data.shape[0]
 input_osc_args = InputBackgroundOscillationArgs(0.5, 20, -torch.pi / 2, 0.5)
 output_osc_args = BackgroundOscillationArgs(50, 20, -torch.pi / 2)
 
-inhibition_args = InhibitionArgs(2000, 50, 5e-3)
+inhibition_args = InhibitionArgs(2000, 50, 2e-3)
 noise_args = NoiseArgs(0, 5e-3, 50)
 
 model_config = ModelConfig(

@@ -17,7 +17,7 @@ from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellCo
     TestConfig, test_model, STDPAdaptiveConfig
 
 # Experiment name
-experiment_name = "adaptive_large_100Hz_5Hz"
+experiment_name = "adaptive_small_100Hz_5Hz"
 
 # Set seed
 seed = 56423
@@ -25,10 +25,10 @@ set_seed(seed)
 
 # Data config
 batch_size = 1
-num_patterns = 10
+num_patterns = 5
 num_repeats_train = 100
-num_repeats_test = 10
-pattern_length = 300
+num_repeats_test = 4
+pattern_length = 100
 pattern_sparsity = 0.5
 
 # Load data

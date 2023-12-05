@@ -9,10 +9,10 @@
         "active_rate": 100,
         "inactive_rate": 0,
         "background_oscillation_args": {
-            "osc_offset": 0.5,
             "osc_amplitude": 0.5,
             "osc_freq": 20,
-            "osc_phase": -1.5707963267948966
+            "osc_phase": -1.5707963267948966,
+            "osc_offset": 0.5
         }
     },
     "stdp_config": {
