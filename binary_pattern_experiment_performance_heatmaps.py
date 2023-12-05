@@ -65,7 +65,7 @@ model_config = ModelConfig(
     encoder_config=EncoderConfig(
         presentation_duration=4e-2,
         delay=1e-2,
-        active_rate=30,
+        active_rate=50,
         inactive_rate=5,
         background_oscillation_args=input_osc_args
     ),
@@ -121,35 +121,51 @@ def print_eval_results(experiment_name, values, res):
 
 
 def set_active_firing_rate(model_config: ModelConfig, data_config: BinaryPatternDataConfig,
+                           train_config: TrainConfig, test_config: TestConfig,
                            value: float):
     model_config.encoder_config.active_rate = value
 
 
 def set_inactive_firing_rate(model_config: ModelConfig, data_config: BinaryPatternDataConfig,
+                             train_config: TrainConfig, test_config: TestConfig,
                              value: float):
     model_config.encoder_config.inactive_rate = value
 
 
 def set_num_patterns(model_config: ModelConfig, data_config: BinaryPatternDataConfig,
+                     train_config: TrainConfig, test_config: TestConfig,
                      value: int):
     data_config.num_patterns = value
+    model_config.output_neuron_count = value
+    train_config.distinct_target_count = value
+    test_config.distinct_target_count = value
 
 
 def set_pattern_length(model_config: ModelConfig, data_config: BinaryPatternDataConfig,
+                       train_config: TrainConfig, test_config: TestConfig,
                        value: int):
     data_config.pattern_length = value
+    model_config.input_neuron_count = value * 2
 
 
 repeats = 1
 seeds = [random.randint(0, 10000) for _ in range(repeats)]
 
-experiment_name = 'active_vs_inactive'
-param_name_1 = 'Active Firing rate'
-set_param_func_1 = set_active_firing_rate
-param_values_1 = [20, 40, 60, 80, 100, 120, 140, 160, 180, 200]
-set_param_func_2 = set_inactive_firing_rate
-param_name_2 = 'Inactive Firing rate'
-param_values_2 = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50]
+# experiment_name = 'active_vs_inactive'
+# param_name_1 = 'Active Firing rate'
+# set_param_func_1 = set_active_firing_rate
+# param_values_1 = [20, 40, 60, 80, 100, 120, 140, 160, 180, 200]
+# set_param_func_2 = set_inactive_firing_rate
+# param_name_2 = 'Inactive Firing rate'
+# param_values_2 = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50]
+
+experiment_name = 'num_patterns_vs_pattern_length'
+param_name_1 = '# Distinct Patterns'
+set_param_func_1 = set_num_patterns
+param_values_1 = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50]
+set_param_func_2 = set_pattern_length
+param_name_2 = 'Pattern length'
+param_values_2 = [25, 50, 75, 100, 125, 150, 175, 200, 225, 250]
 
 # create folder for experiment
 os.makedirs(f'./results/config_eval_heatmap/{experiment_name}', exist_ok=True)
@@ -164,16 +180,16 @@ with open(f'./results/config_eval_heatmap/{experiment_name}/{experiment_name}_da
 val_1_count = len(param_values_1)
 val_2_count = len(param_values_2)
 
-accuracies = np.zeros((val_1_count, val_2_count), dtype=float)
-rate_accuracies = np.zeros((val_1_count, val_2_count), dtype=float)
-losses = np.zeros((val_1_count, val_2_count), dtype=float)
-paper_losses = np.zeros((val_1_count, val_2_count), dtype=float)
+accuracies = np.zeros((val_2_count, val_1_count), dtype=float)
+rate_accuracies = np.zeros((val_2_count, val_1_count), dtype=float)
+losses = np.zeros((val_2_count, val_1_count), dtype=float)
+paper_losses = np.zeros((val_2_count, val_1_count), dtype=float)
 
 # Run experiment
 for i, val_1 in enumerate(param_values_1):
     for j, val_2 in enumerate(param_values_2):
-        set_param_func_1(model_config, data_config, val_1)
-        set_param_func_2(model_config, data_config, val_2)
+        set_param_func_1(model_config, data_config, train_config, test_config, val_1)
+        set_param_func_2(model_config, data_config, train_config, test_config, val_2)
 
         train_config.model_config = model_config
         test_config.model_config = model_config
@@ -182,12 +198,14 @@ for i, val_1 in enumerate(param_values_1):
         print_eval_results(experiment_name, [val_1, val_2], eval_results)
 
         # add results to metrics
-        accuracies[i, j] = eval_results['accuracy']
-        rate_accuracies[i, j] = eval_results['rate_accuracy']
-        losses[i, j] = eval_results['loss']
-        paper_losses[i, j] = eval_results['loss_paper']
+        accuracies[j, i] = np.mean(eval_results['accuracy'])
+        rate_accuracies[j, i] = np.mean(eval_results['rate_accuracy'])
+        losses[j, i] = np.mean(eval_results['loss'])
+        paper_losses[j, i] = np.mean(eval_results['loss_paper'])
 
-sns.heatmap(accuracies, xticklabels=param_values_1, yticklabels=param_values_2)
+ax = sns.heatmap(accuracies, xticklabels=param_values_1, yticklabels=param_values_2,
+            vmin=0, vmax=1, annot=True, fmt='.2f')
+ax.invert_yaxis()
 plt.title('Accuracy')
 plt.xlabel(param_name_1)
 plt.ylabel(param_name_2)
@@ -195,7 +213,9 @@ plt.tight_layout()
 plt.savefig(f'./results/config_eval_heatmap/{experiment_name}/{experiment_name}_{seed}_accuracy.png')
 plt.show()
 
-sns.heatmap(rate_accuracies, xticklabels=param_values_1, yticklabels=param_values_2)
+ax = sns.heatmap(rate_accuracies, xticklabels=param_values_1, yticklabels=param_values_2,
+            vmin=0, vmax=1, annot=True, fmt='.2f')
+ax.invert_yaxis()
 plt.title('Rate Accuracy')
 plt.xlabel(param_name_1)
 plt.ylabel(param_name_2)
@@ -203,7 +223,9 @@ plt.tight_layout()
 plt.savefig(f'./results/config_eval_heatmap/{experiment_name}/{experiment_name}_{seed}_rate_accuracy.png')
 plt.show()
 
-sns.heatmap(losses, xticklabels=param_values_1, yticklabels=param_values_2)
+ax = sns.heatmap(losses, xticklabels=param_values_1, yticklabels=param_values_2,
+            vmin=0, vmax=1, annot=True, fmt='.2f')
+ax.invert_yaxis()
 plt.title('Normalized conditional entropy')
 plt.xlabel(param_name_1)
 plt.ylabel(param_name_2)
@@ -211,7 +233,9 @@ plt.tight_layout()
 plt.savefig(f'./results/config_eval_heatmap/{experiment_name}/{experiment_name}_{seed}_loss.png')
 plt.show()
 
-sns.heatmap(paper_losses, xticklabels=param_values_1, yticklabels=param_values_2)
+ax = sns.heatmap(paper_losses, xticklabels=param_values_1, yticklabels=param_values_2,
+            vmin=0, vmax=1, annot=True, fmt='.2f')
+ax.invert_yaxis()
 plt.title('Normalized conditional entropy paper')
 plt.xlabel(param_name_1)
 plt.ylabel(param_name_2)

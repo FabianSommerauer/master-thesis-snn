@@ -17,7 +17,7 @@ from train_test_loop import ModelConfig, EncoderConfig, STDPConfig, OutputCellCo
     TestConfig, test_model, STDPAdaptiveConfig, STDPClassicConfig
 
 # Experiment name
-experiment_name = "testing"
+experiment_name = "adaptive_non_binarized_100Hz_0Hz_full"
 
 # Set seed
 seed = 85453

@@ -1,0 +1,50 @@
+{
+    "dt": 0.001,
+    "input_neuron_count": 200,
+    "output_neuron_count": 10,
+    "sigma": 0.005,
+    "encoder_config": {
+        "presentation_duration": 0.04,
+        "delay": 0.01,
+        "active_rate": 50,
+        "inactive_rate": 5,
+        "background_oscillation_args": {
+            "osc_amplitude": 0.5,
+            "osc_freq": 20,
+            "osc_phase": -1.5707963267948966,
+            "osc_offset": 0.5
+        }
+    },
+    "stdp_config": {
+        "c": 1.0,
+        "time_batch_size": 5,
+        "method": {
+            "type": "adaptive",
+            "base_mu": 0.5,
+            "base_mu_bias": 0.5,
+            "min_mu": 1e-06,
+            "min_mu_bias": 1e-06,
+            "max_delta": 1.0
+        }
+    },
+    "output_cell_config": {
+        "inhibition_args": {
+            "inhibition_increase": 2000,
+            "inhibition_rest": 100,
+            "inhibition_tau": 0.005
+        },
+        "noise_args": {
+            "noise_rest": 0,
+            "noise_tau": 0.005,
+            "noise_sigma": 50
+        },
+        "log_firing_rate_calc_mode": "ExpectedInputCorrected",
+        "background_oscillation_args": {
+            "osc_amplitude": 50,
+            "osc_freq": 20,
+            "osc_phase": -1.5707963267948966
+        }
+    },
+    "weight_init": 0,
+    "bias_init": 0
+}
