@@ -219,7 +219,7 @@ class OUInhibitionProcess(object):
 
         self.inhibition_decay_factor = np.exp(- dt / inhibition_tau)
         self.noise_decay_factor = np.exp(- dt / noise_tau)
-        self.total_noise_sigma = noise_sigma  # todo: * np.sqrt((1. - self.noise_decay_factor ** 2) / 2. * noise_tau)
+        self.total_noise_sigma = noise_sigma * np.sqrt((1. - self.noise_decay_factor ** 2) / 2. * noise_tau)
 
     @measure_time
     def step(self, spike_occurrences, state=None):
@@ -396,12 +396,17 @@ class EfficientStochasticOutputNeuronCell(nn.Module):
         else:
             self.background_oscillation_active = False
 
+        # if noise_sigma is chosen based on the typical formula for OU-noise add the following term:
+        # * np.sqrt((1. - self.noise_filter[1] ** 2) / 2. * self.noise_args.noise_tau)
+        self.total_noise_sigma = self.noise_args.noise_sigma
+
+
     @measure_time
     def forward(self, inputs, state=None):
         with Timer('inhibition'):
             noise_base = torch.ones(*inputs.shape[:-1], 1,
                                     dtype=inputs.dtype, device=inputs.device) * self.noise_args.noise_rest
-            noise_rand = torch.normal(0.0, self.noise_args.noise_sigma, noise_base.shape,
+            noise_rand = torch.normal(0.0, self.total_noise_sigma, noise_base.shape,
                                       device=noise_base.device, dtype=noise_base.dtype)
 
             if state is None:
